@@ -23,6 +23,15 @@ private:
    double m_sell_profit;
    double m_total_profit;
 
+   int    m_buy_stop_count;
+   int    m_sell_stop_count;
+   int    m_buy_stop_ticket;
+   int    m_sell_stop_ticket;
+   double m_buy_stop_lots;
+   double m_sell_stop_lots;
+   double m_buy_stop_price;
+   double m_sell_stop_price;
+
    void Label(string id, int x, int y, string text, int size=9)
    {
       string name = ZGOLD_PANEL_PREFIX + id;
@@ -52,8 +61,8 @@ private:
          ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
          ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10);
          ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10);
-         ObjectSetInteger(0, name, OBJPROP_XSIZE, 420);
-         ObjectSetInteger(0, name, OBJPROP_YSIZE, 390);
+         ObjectSetInteger(0, name, OBJPROP_XSIZE, 470);
+         ObjectSetInteger(0, name, OBJPROP_YSIZE, 430);
          ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrBlack);
          ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrDimGray);
          ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
@@ -77,6 +86,14 @@ public:
       m_buy_profit = 0.0;
       m_sell_profit = 0.0;
       m_total_profit = 0.0;
+      m_buy_stop_count = 0;
+      m_sell_stop_count = 0;
+      m_buy_stop_ticket = -1;
+      m_sell_stop_ticket = -1;
+      m_buy_stop_lots = 0.0;
+      m_sell_stop_lots = 0.0;
+      m_buy_stop_price = 0.0;
+      m_sell_stop_price = 0.0;
    }
 
    void Initialize()
@@ -100,20 +117,9 @@ public:
          m_reconciler = status;
    }
 
-   void SetRuntimeState(string state)
-   {
-      m_runtime_state = state;
-   }
-
-   void SetLastEvent(string event_text)
-   {
-      m_last_event = event_text;
-   }
-
-   void SetError(string error_text)
-   {
-      m_error = error_text;
-   }
+   void SetRuntimeState(string state) { m_runtime_state = state; }
+   void SetLastEvent(string event_text) { m_last_event = event_text; }
+   void SetError(string error_text) { m_error = error_text; }
 
    void SetMarket(double bid, double ask, double spread_points, datetime server_time)
    {
@@ -136,19 +142,29 @@ public:
       m_total_profit = total_profit;
    }
 
+   void SetPending(int buy_stop_count, int buy_stop_ticket, double buy_stop_lots, double buy_stop_price,
+                   int sell_stop_count, int sell_stop_ticket, double sell_stop_lots, double sell_stop_price)
+   {
+      m_buy_stop_count = buy_stop_count;
+      m_buy_stop_ticket = buy_stop_ticket;
+      m_buy_stop_lots = buy_stop_lots;
+      m_buy_stop_price = buy_stop_price;
+      m_sell_stop_count = sell_stop_count;
+      m_sell_stop_ticket = sell_stop_ticket;
+      m_sell_stop_lots = sell_stop_lots;
+      m_sell_stop_price = sell_stop_price;
+   }
+
    void Render()
    {
       Background();
-
       int x = 25;
       Label("TITLE", x, 20, "ZGOLD - DEBUG PANEL", 11);
-
       Label("SYSTEM", x, 55, "SYSTEM", 9);
       Label("STATUS", x, 75, "EA        : " + m_runtime_state);
       Label("SYMBOL", x, 95, "SYMBOL    : " + Symbol());
 
       Label("MARKET", x, 195, "MARKET", 9);
-
       Label("RUNTIME", x, 235, "RUNTIME", 9);
       Label("TICK", x, 255, "Tick      : " + IntegerToString((int)m_tick_count));
 
@@ -157,16 +173,19 @@ public:
       Label("SELL", x, 330, "SELL      : " + IntegerToString(m_sell_count) + " | " + DoubleToString(m_sell_lots, 2) + " | " + DoubleToString(m_sell_profit, 2));
       Label("TOTAL", x, 350, "TOTAL P/L : " + DoubleToString(m_total_profit, 2));
 
-      Label("MODULES", 225, 55, "MODULES", 9);
-      Label("CORE", 225, 75, "Core            [" + (m_core ? "OK" : "WAIT") + "]");
-      Label("MARKET_MODULE", 225, 95, "MarketState     [" + (m_market ? "OK" : "WAIT") + "]");
-      Label("RECONCILER", 225, 115, "Reconciler      [" + (m_reconciler ? "OK" : "WAIT") + "]");
+      Label("PENDING", x, 385, "PENDING", 9);
+      Label("BUY_STOP", x, 405, "BUY STOP  : " + IntegerToString(m_buy_stop_count) + " | #" + IntegerToString(m_buy_stop_ticket) + " | " + DoubleToString(m_buy_stop_lots, 2) + " | " + DoubleToString(m_buy_stop_price, Digits));
+      Label("SELL_STOP", x, 425, "SELL STOP : " + IntegerToString(m_sell_stop_count) + " | #" + IntegerToString(m_sell_stop_ticket) + " | " + DoubleToString(m_sell_stop_lots, 2) + " | " + DoubleToString(m_sell_stop_price, Digits));
 
-      Label("EVENT", 225, 195, "LAST EVENT", 9);
-      Label("LAST_EVENT", 225, 215, "> " + m_last_event);
+      Label("MODULES", 260, 55, "MODULES", 9);
+      Label("CORE", 260, 75, "Core            [" + (m_core ? "OK" : "WAIT") + "]");
+      Label("MARKET_MODULE", 260, 95, "MarketState     [" + (m_market ? "OK" : "WAIT") + "]");
+      Label("RECONCILER", 260, 115, "Reconciler      [" + (m_reconciler ? "OK" : "WAIT") + "]");
+      Label("EVENT", 260, 195, "LAST EVENT", 9);
+      Label("LAST_EVENT", 260, 215, "> " + m_last_event);
 
       if(m_error != "")
-         Label("ERROR", 225, 235, "> ERROR: " + m_error);
+         Label("ERROR", 260, 235, "> ERROR: " + m_error);
    }
 
    void Destroy()
