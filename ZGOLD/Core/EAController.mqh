@@ -30,12 +30,16 @@ public:
       m_market.Update();
       m_reconciler.Reconcile();
 
+      ExposureState exposure = m_reconciler.GetExposure();
       m_panel.SetMarket(m_market.Bid(), m_market.Ask(), m_market.Spread(), m_market.ServerTime());
+      m_panel.SetExposure(exposure.BuyCount(), exposure.BuyLots(), exposure.BuyProfit(),
+                          exposure.SellCount(), exposure.SellLots(), exposure.SellProfit(),
+                          exposure.TotalProfit());
       m_panel.SetRuntimeState("RUNNING");
-      m_panel.SetLastEvent("Runtime started");
+      m_panel.SetLastEvent("Initial reconciliation OK");
       m_panel.Render();
 
-      Print("[ZGOLD] Fragment 01 initialized");
+      Print("[ZGOLD] Fragment 02 initialized - observation only");
       m_initialized = true;
       return INIT_SUCCEEDED;
    }
@@ -48,8 +52,13 @@ public:
       m_market.Update();
       m_reconciler.Reconcile();
 
+      ExposureState exposure = m_reconciler.GetExposure();
       m_panel.IncrementTick();
       m_panel.SetMarket(m_market.Bid(), m_market.Ask(), m_market.Spread(), m_market.ServerTime());
+      m_panel.SetExposure(exposure.BuyCount(), exposure.BuyLots(), exposure.BuyProfit(),
+                          exposure.SellCount(), exposure.SellLots(), exposure.SellProfit(),
+                          exposure.TotalProfit());
+      m_panel.SetLastEvent("RECONCILIATION OK");
       m_panel.Render();
    }
 
