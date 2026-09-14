@@ -20,6 +20,12 @@ private:
    int    m_prev_count;
    bool   m_initialized;
 
+   int    m_cur_ticket[ZGOLD_LIFECYCLE_MAX_ORDERS];
+   int    m_cur_type[ZGOLD_LIFECYCLE_MAX_ORDERS];
+   double m_cur_lots[ZGOLD_LIFECYCLE_MAX_ORDERS];
+   double m_cur_price[ZGOLD_LIFECYCLE_MAX_ORDERS];
+   int    m_cur_count;
+
    int    m_event;
    int    m_ticket;
    int    m_type;
@@ -45,12 +51,12 @@ private:
 
    string TypeName(int type)
    {
-      if(type == OP_BUY)      return "BUY";
-      if(type == OP_SELL)     return "SELL";
-      if(type == OP_BUYSTOP)  return "BUY STOP";
-      if(type == OP_SELLSTOP) return "SELL STOP";
-      if(type == OP_BUYLIMIT) return "BUY LIMIT";
-      if(type == OP_SELLLIMIT)return "SELL LIMIT";
+      if(type == OP_BUY)       return "BUY";
+      if(type == OP_SELL)      return "SELL";
+      if(type == OP_BUYSTOP)   return "BUY STOP";
+      if(type == OP_SELLSTOP)  return "SELL STOP";
+      if(type == OP_BUYLIMIT)  return "BUY LIMIT";
+      if(type == OP_SELLLIMIT) return "SELL LIMIT";
       return "UNKNOWN";
    }
 
@@ -73,6 +79,7 @@ public:
    void Reset()
    {
       m_prev_count = 0;
+      m_cur_count = 0;
       m_initialized = false;
       m_event = ZGOLD_LIFE_NONE;
       m_ticket = -1;
@@ -87,25 +94,16 @@ public:
          m_prev_type[i] = -1;
          m_prev_lots[i] = 0.0;
          m_prev_price[i] = 0.0;
+         m_cur_ticket[i] = -1;
+         m_cur_type[i] = -1;
+         m_cur_lots[i] = 0.0;
+         m_cur_price[i] = 0.0;
       }
    }
 
    void Reconcile(int magic)
    {
-      int cur_ticket[ZGOLD_LIFECYCLE_MAX_ORDERS];
-      int cur_type[ZGOLD_LIFECYCLE_MAX_ORDERS];
-      double cur_lots[ZGOLD_LIFECYCLE_MAX_ORDERS];
-      double cur_price[ZGOLD_LIFECYCLE_MAX_ORDERS];
-      int cur_count = 0;
-
-      for(int init = 0; init < ZGOLD_LIFECYCLE_MAX_ORDERS; init++)
-      {
-         cur_ticket[init] = -1;
-         cur_type[init] = -1;
-         cur_lots[init] = 0.0;
-         cur_price[init] = 0.0;
-      }
-
+      m_cur_count = 0;
       m_event = ZGOLD_LIFE_NONE;
       m_ticket = -1;
       m_type = -1;
@@ -113,116 +111,123 @@ public:
       m_price = 0.0;
       m_event_text = "NO CHANGE";
 
-      for(int i = OrdersTotal() - 1; i >= 0 && cur_count < ZGOLD_LIFECYCLE_MAX_ORDERS; i--)
+      for(int i = OrdersTotal() - 1; i >= 0 && m_cur_count < ZGOLD_LIFECYCLE_MAX_ORDERS; i--)
       {
          if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
             continue;
          if(OrderSymbol() != Symbol() || OrderMagicNumber() != magic)
             continue;
 
-         int ticket = OrderTicket();
-         int type = OrderType();
-         double lots = OrderLots();
-         double price = OrderOpenPrice();
-
-         cur_ticket[cur_count] = ticket;
-         cur_type[cur_count] = type;
-         cur_lots[cur_count] = lots;
-         cur_price[cur_count] = price;
-         cur_count++;
-
-         int p = FindPrevious(ticket);
-
-         if(p < 0)
-         {
-            if(!m_initialized)
-               continue;
-
-            SetEvent(ZGOLD_LIFE_CREATED, ticket, type, lots, price,
-                     "CREATED #" + IntegerToString(ticket) + " " + TypeName(type));
-            break;
-         }
-
-         if(m_prev_type[p] != type)
-         {
-            if(IsPendingType(m_prev_type[p]) && (type == OP_BUY || type == OP_SELL))
-            {
-               SetEvent(ZGOLD_LIFE_EXECUTED, ticket, type, lots, price,
-                        "EXECUTED #" + IntegerToString(ticket) + " -> " + TypeName(type));
-               break;
-            }
-         }
-
-         if(m_prev_type[p] == type && IsPendingType(type))
-         {
-            if(MathAbs(m_prev_price[p] - price) > Point * 0.1 ||
-               MathAbs(m_prev_lots[p] - lots) > 0.0000001)
-            {
-               SetEvent(ZGOLD_LIFE_MODIFIED, ticket, type, lots, price,
-                        "MODIFIED #" + IntegerToString(ticket) + " " + TypeName(type));
-               break;
-            }
-         }
+         m_cur_ticket[m_cur_count] = OrderTicket();
+         m_cur_type[m_cur_count] = OrderType();
+         m_cur_lots[m_cur_count] = OrderLots();
+         m_cur_price[m_cur_count] = OrderOpenPrice();
+         m_cur_count++;
       }
 
-      if(m_event == ZGOLD_LIFE_NONE && m_initialized)
-      {
-         for(int p = 0; p < m_prev_count; p++)
-         {
-            bool found = false;
-            for(int c = 0; c < cur_count; c++)
-            {
-               if(cur_ticket[c] == m_prev_ticket[p])
-               {
-                  found = true;
-                  break;
-               }
-            }
-
-            if(found)
-               continue;
-
-            int history_type = m_prev_type[p];
-            double history_lots = m_prev_lots[p];
-            double history_price = m_prev_price[p];
-
-            if(OrderSelect(m_prev_ticket[p], SELECT_BY_TICKET, MODE_HISTORY))
-            {
-               history_type = OrderType();
-               history_lots = OrderLots();
-               history_price = OrderOpenPrice();
-            }
-
-            if(history_type == OP_BUY || history_type == OP_SELL)
-            {
-               SetEvent(ZGOLD_LIFE_CLOSED, m_prev_ticket[p], history_type, history_lots, history_price,
-                        "CLOSED #" + IntegerToString(m_prev_ticket[p]) + " " + TypeName(history_type));
-               break;
-            }
-
-            if(IsPendingType(history_type))
-            {
-               SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p], history_type,
-                        history_lots, history_price,
-                        "DELETED #" + IntegerToString(m_prev_ticket[p]));
-               break;
-            }
-         }
-      }
-
+      // Initial snapshot establishes the baseline and emits no false CREATE events.
       if(!m_initialized)
       {
          SetEvent(ZGOLD_LIFE_SNAPSHOT, -1, -1, 0.0, 0.0, "INITIAL SNAPSHOT");
          m_initialized = true;
       }
-
-      m_prev_count = cur_count;
-      for(int k = 0; k < cur_count; k++)
+      else
       {
-         m_prev_ticket[k] = cur_ticket[k];
-         m_prev_type[k] = cur_type[k];
-         m_prev_lots[k] = cur_lots[k];
-         m_prev_price[k] = cur_price[k];
+         // Detect new orders and state changes against the complete previous snapshot.
+         for(int c = 0; c < m_cur_count && m_event == ZGOLD_LIFE_NONE; c++)
+         {
+            int p = FindPrevious(m_cur_ticket[c]);
+
+            if(p < 0)
+            {
+               SetEvent(ZGOLD_LIFE_CREATED, m_cur_ticket[c], m_cur_type[c],
+                        m_cur_lots[c], m_cur_price[c],
+                        "CREATED #" + IntegerToString(m_cur_ticket[c]) + " " + TypeName(m_cur_type[c]));
+               break;
+            }
+
+            if(m_prev_type[p] != m_cur_type[c])
+            {
+               if(IsPendingType(m_prev_type[p]) &&
+                  (m_cur_type[c] == OP_BUY || m_cur_type[c] == OP_SELL))
+               {
+                  SetEvent(ZGOLD_LIFE_EXECUTED, m_cur_ticket[c], m_cur_type[c],
+                           m_cur_lots[c], m_cur_price[c],
+                           "EXECUTED #" + IntegerToString(m_cur_ticket[c]) + " -> " + TypeName(m_cur_type[c]));
+                  break;
+               }
+            }
+
+            if(m_prev_type[p] == m_cur_type[c] && IsPendingType(m_cur_type[c]))
+            {
+               if(MathAbs(m_prev_price[p] - m_cur_price[c]) > Point * 0.1 ||
+                  MathAbs(m_prev_lots[p] - m_cur_lots[c]) > 0.0000001)
+               {
+                  SetEvent(ZGOLD_LIFE_MODIFIED, m_cur_ticket[c], m_cur_type[c],
+                           m_cur_lots[c], m_cur_price[c],
+                           "MODIFIED #" + IntegerToString(m_cur_ticket[c]) + " " + TypeName(m_cur_type[c]));
+                  break;
+               }
+            }
+         }
+
+         // If nothing was added/modified/executed, detect a disappeared ticket.
+         if(m_event == ZGOLD_LIFE_NONE)
+         {
+            for(int p2 = 0; p2 < m_prev_count; p2++)
+            {
+               bool found = false;
+
+               for(int c2 = 0; c2 < m_cur_count; c2++)
+               {
+                  if(m_cur_ticket[c2] == m_prev_ticket[p2])
+                  {
+                     found = true;
+                     break;
+                  }
+               }
+
+               if(found)
+                  continue;
+
+               int history_type = m_prev_type[p2];
+               double history_lots = m_prev_lots[p2];
+               double history_price = m_prev_price[p2];
+
+               if(OrderSelect(m_prev_ticket[p2], SELECT_BY_TICKET, MODE_HISTORY))
+               {
+                  history_type = OrderType();
+                  history_lots = OrderLots();
+                  history_price = OrderOpenPrice();
+               }
+
+               if(history_type == OP_BUY || history_type == OP_SELL)
+               {
+                  SetEvent(ZGOLD_LIFE_CLOSED, m_prev_ticket[p2], history_type,
+                           history_lots, history_price,
+                           "CLOSED #" + IntegerToString(m_prev_ticket[p2]) + " " + TypeName(history_type));
+                  break;
+               }
+
+               if(IsPendingType(history_type))
+               {
+                  SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p2], history_type,
+                           history_lots, history_price,
+                           "DELETED #" + IntegerToString(m_prev_ticket[p2]));
+                  break;
+               }
+            }
+         }
+      }
+
+      // Promote the complete current snapshot to previous state only after analysis.
+      m_prev_count = m_cur_count;
+      for(int k = 0; k < m_cur_count; k++)
+      {
+         m_prev_ticket[k] = m_cur_ticket[k];
+         m_prev_type[k] = m_cur_type[k];
+         m_prev_lots[k] = m_cur_lots[k];
+         m_prev_price[k] = m_cur_price[k];
       }
    }
 
