@@ -47,9 +47,15 @@ public:
       return true;
    }
 
-   ExposureState GetExposure() const
+   // MQL4 classes are reference-like objects and cannot be returned by value
+   // here without requiring a user-defined copy constructor. Expose the
+   // reconciled state through an output parameter instead.
+   void CopyExposureTo(ExposureState &target)
    {
-      return m_exposure;
+      target.Reset();
+      target.SetBuy(m_exposure.BuyCount(), m_exposure.BuyLots(), m_exposure.BuyProfit());
+      target.SetSell(m_exposure.SellCount(), m_exposure.SellLots(), m_exposure.SellProfit());
+      target.Finalize();
    }
 };
 
