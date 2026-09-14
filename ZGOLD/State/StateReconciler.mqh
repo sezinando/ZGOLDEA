@@ -2,11 +2,13 @@
 #define __ZGOLD_STATE_RECONCILER_MQH__
 
 #include "ExposureState.mqh"
+#include "PendingState.mqh"
 
 class StateReconciler
 {
 private:
    ExposureState m_exposure;
+   PendingState  m_pending;
 
 public:
    bool Reconcile()
@@ -17,6 +19,8 @@ public:
       double sell_lots = 0.0;
       double buy_profit = 0.0;
       double sell_profit = 0.0;
+
+      m_pending.Reset();
 
       for(int i = OrdersTotal() - 1; i >= 0; i--)
       {
@@ -37,6 +41,22 @@ public:
             sell_lots += OrderLots();
             sell_profit += OrderProfit() + OrderSwap() + OrderCommission();
          }
+         else if(type == OP_BUYSTOP)
+         {
+            m_pending.AddBuyStop(OrderTicket(), OrderLots(), OrderOpenPrice());
+         }
+         else if(type == OP_SELLSTOP)
+         {
+            m_pending.AddSellStop(OrderTicket(), OrderLots(), OrderOpenPrice());
+         }
+         else if(type == OP_BUYLIMIT)
+         {
+            m_pending.AddBuyLimit();
+         }
+         else if(type == OP_SELLLIMIT)
+         {
+            m_pending.AddSellLimit();
+         }
       }
 
       m_exposure.Reset();
@@ -47,15 +67,29 @@ public:
       return true;
    }
 
-   // MQL4 classes are reference-like objects and cannot be returned by value
-   // here without requiring a user-defined copy constructor. Expose the
-   // reconciled state through an output parameter instead.
    void CopyExposureTo(ExposureState &target)
    {
       target.Reset();
       target.SetBuy(m_exposure.BuyCount(), m_exposure.BuyLots(), m_exposure.BuyProfit());
       target.SetSell(m_exposure.SellCount(), m_exposure.SellLots(), m_exposure.SellProfit());
       target.Finalize();
+   }
+
+   void CopyPendingTo(PendingState &target)
+   {
+      target.Reset();
+
+      if(m_pending.BuyStopCount() > 0)
+         target.AddBuyStop(m_pending.BuyStopTicket(), m_pending.BuyStopLots(), m_pending.BuyStopPrice());
+
+      if(m_pending.SellStopCount() > 0)
+         target.AddSellStop(m_pending.SellStopTicket(), m_pending.SellStopLots(), m_pending.SellStopPrice());
+
+      for(int i = 1; i < m_pending.BuyLimitCount(); i++)
+         target.AddBuyLimit();
+
+      for(int i = 1; i < m_pending.SellLimitCount(); i++)
+         target.AddSellLimit();
    }
 };
 
