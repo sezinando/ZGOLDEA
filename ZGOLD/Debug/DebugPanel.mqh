@@ -122,7 +122,7 @@ public:
       Label("MARKET", x, 175, "MARKET", 9);
 
       Label("RUNTIME", x, 215, "RUNTIME", 9);
-      Label("TICK", x, 235, "Tick      : " + LongToString(m_tick_count));
+      Label("TICK", x, 235, "Tick      : " + IntegerToString((int)m_tick_count));
 
       Label("MODULES", x, 270, "MODULES", 9);
       Label("CORE", x, 290, "Core              [" + (m_core ? "OK" : "WAIT") + "]");
