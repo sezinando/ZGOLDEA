@@ -12,6 +12,7 @@ private:
    StateReconciler m_reconciler;
    DebugPanel      m_panel;
    bool             m_initialized;
+   int              m_magic;
 
    void UpdatePanel()
    {
@@ -29,27 +30,36 @@ private:
    }
 
 public:
-   EAController() { m_initialized = false; }
-
-   int Initialize(int magic)
+   EAController()
    {
-      m_reconciler.SetMagic(magic);
+      m_initialized = false;
+      m_magic = 1001;
+   }
 
+   void SetMagic(int magic)
+   {
+      m_magic = magic;
+      m_reconciler.SetMagic(magic);
+   }
+
+   int Initialize()
+   {
       m_panel.Initialize();
       m_panel.SetModuleStatus("CORE", true);
       m_panel.SetModuleStatus("MARKET STATE", true);
       m_panel.SetModuleStatus("STATE RECONCILER", true);
       m_panel.SetLastEvent("EA initialized");
 
+      m_reconciler.SetMagic(m_magic);
       m_market.Update();
       m_reconciler.Reconcile();
       UpdatePanel();
 
       m_panel.SetRuntimeState("RUNNING");
-      m_panel.SetLastEvent("Initial reconciliation OK");
+      m_panel.SetLastEvent(m_reconciler.LifecycleText());
       m_panel.Render();
 
-      Print("[ZGOLD] Fragment 03 initialized - observation only. Magic=", magic);
+      Print("[ZGOLD] Fragment 03 initialized - observation only");
       m_initialized = true;
       return INIT_SUCCEEDED;
    }
@@ -62,7 +72,7 @@ public:
       m_reconciler.Reconcile();
       m_panel.IncrementTick();
       UpdatePanel();
-      m_panel.SetLastEvent("RECONCILIATION OK");
+      m_panel.SetLastEvent(m_reconciler.LifecycleText());
       m_panel.Render();
    }
 
