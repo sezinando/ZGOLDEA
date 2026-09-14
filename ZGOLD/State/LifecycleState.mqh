@@ -125,7 +125,6 @@ public:
          m_cur_count++;
       }
 
-      // Initial snapshot establishes the baseline and emits no false CREATE events.
       if(!m_initialized)
       {
          SetEvent(ZGOLD_LIFE_SNAPSHOT, -1, -1, 0.0, 0.0, "INITIAL SNAPSHOT");
@@ -133,7 +132,6 @@ public:
       }
       else
       {
-         // Detect new orders and state changes against the complete previous snapshot.
          for(int c = 0; c < m_cur_count && m_event == ZGOLD_LIFE_NONE; c++)
          {
             int p = FindPrevious(m_cur_ticket[c]);
@@ -171,7 +169,6 @@ public:
             }
          }
 
-         // If nothing was added/modified/executed, detect a disappeared ticket.
          if(m_event == ZGOLD_LIFE_NONE)
          {
             for(int p2 = 0; p2 < m_prev_count; p2++)
@@ -220,7 +217,6 @@ public:
          }
       }
 
-      // Promote the complete current snapshot to previous state only after analysis.
       m_prev_count = m_cur_count;
       for(int k = 0; k < m_cur_count; k++)
       {
