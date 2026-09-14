@@ -45,7 +45,7 @@ private:
          ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10);
          ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10);
          ObjectSetInteger(0, name, OBJPROP_XSIZE, 420);
-         ObjectSetInteger(0, name, OBJPROP_YSIZE, 300);
+         ObjectSetInteger(0, name, OBJPROP_YSIZE, 360);
          ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrBlack);
          ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrDimGray);
          ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
@@ -102,13 +102,9 @@ public:
 
    void SetMarket(double bid, double ask, double spread, datetime server_time)
    {
-      string bid_text = DoubleToString(bid, Digits);
-      string ask_text = DoubleToString(ask, Digits);
-      string spread_text = DoubleToString(spread, Digits);
-
-      Label("BID", 25, 110, "Bid       : " + bid_text);
-      Label("ASK", 25, 130, "Ask       : " + ask_text);
-      Label("SPREAD", 25, 150, "Spread    : " + spread_text);
+      Label("BID", 25, 110, "Bid       : " + DoubleToString(bid, Digits));
+      Label("ASK", 25, 130, "Ask       : " + DoubleToString(ask, Digits));
+      Label("SPREAD", 25, 150, "Spread    : " + DoubleToString(spread, Digits));
       Label("TIME", 25, 190, "Server    : " + TimeToString(server_time, TIME_DATE|TIME_SECONDS));
    }
 
