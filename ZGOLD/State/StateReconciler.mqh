@@ -9,8 +9,19 @@ class StateReconciler
 private:
    ExposureState m_exposure;
    PendingState  m_pending;
+   int           m_magic;
 
 public:
+   StateReconciler()
+   {
+      m_magic = 1001;
+   }
+
+   void SetMagic(int magic)
+   {
+      m_magic = magic;
+   }
+
    bool Reconcile()
    {
       int buy_count = 0;
@@ -25,6 +36,13 @@ public:
       for(int i = OrdersTotal() - 1; i >= 0; i--)
       {
          if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+            continue;
+
+         // ZGOLD must observe only its own orders.
+         if(OrderSymbol() != Symbol())
+            continue;
+
+         if(OrderMagicNumber() != m_magic)
             continue;
 
          int type = OrderType();
