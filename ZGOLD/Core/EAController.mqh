@@ -25,8 +25,7 @@ private:
       m_panel.SetExposure(exposure.BuyCount(), exposure.BuyLots(), exposure.BuyProfit(),
                           exposure.SellCount(), exposure.SellLots(), exposure.SellProfit(),
                           exposure.TotalProfit());
-      m_panel.SetPending(pending.BuyStopCount(), pending.BuyStopTicket(), pending.BuyStopLots(), pending.BuyStopPrice(),
-                         pending.SellStopCount(), pending.SellStopTicket(), pending.SellStopLots(), pending.SellStopPrice());
+      m_panel.SetPending(pending);
    }
 
 public:
@@ -59,7 +58,7 @@ public:
       m_panel.SetLastEvent(m_reconciler.LifecycleText());
       m_panel.Render();
 
-      Print("[ZGOLD] Fragment 03 initialized - observation only");
+      Print("[ZGOLD] Pending inventory + lifecycle observation initialized");
       m_initialized = true;
       return INIT_SUCCEEDED;
    }
