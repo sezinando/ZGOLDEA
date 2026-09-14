@@ -31,8 +31,10 @@ private:
 public:
    EAController() { m_initialized = false; }
 
-   int Initialize()
+   int Initialize(int magic)
    {
+      m_reconciler.SetMagic(magic);
+
       m_panel.Initialize();
       m_panel.SetModuleStatus("CORE", true);
       m_panel.SetModuleStatus("MARKET STATE", true);
@@ -47,7 +49,7 @@ public:
       m_panel.SetLastEvent("Initial reconciliation OK");
       m_panel.Render();
 
-      Print("[ZGOLD] Fragment 03 initialized - observation only");
+      Print("[ZGOLD] Fragment 03 initialized - observation only. Magic=", magic);
       m_initialized = true;
       return INIT_SUCCEEDED;
    }
