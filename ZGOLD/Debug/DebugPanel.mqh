@@ -115,11 +115,11 @@ public:
       m_error = error_text;
    }
 
-   void SetMarket(double bid, double ask, double spread, datetime server_time)
+   void SetMarket(double bid, double ask, double spread_points, datetime server_time)
    {
       Label("BID", 25, 110, "Bid       : " + DoubleToString(bid, Digits));
       Label("ASK", 25, 130, "Ask       : " + DoubleToString(ask, Digits));
-      Label("SPREAD", 25, 150, "Spread    : " + DoubleToString(spread, Digits));
+      Label("SPREAD", 25, 150, "Spread    : " + DoubleToString(spread_points, 1) + " points");
       Label("TIME", 25, 170, "Server    : " + TimeToString(server_time, TIME_DATE|TIME_SECONDS));
    }
 
