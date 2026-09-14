@@ -15,6 +15,14 @@ private:
    bool m_market;
    bool m_reconciler;
 
+   int    m_buy_count;
+   int    m_sell_count;
+   double m_buy_lots;
+   double m_sell_lots;
+   double m_buy_profit;
+   double m_sell_profit;
+   double m_total_profit;
+
    void Label(string id, int x, int y, string text, int size=9)
    {
       string name = ZGOLD_PANEL_PREFIX + id;
@@ -45,7 +53,7 @@ private:
          ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10);
          ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10);
          ObjectSetInteger(0, name, OBJPROP_XSIZE, 420);
-         ObjectSetInteger(0, name, OBJPROP_YSIZE, 360);
+         ObjectSetInteger(0, name, OBJPROP_YSIZE, 390);
          ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrBlack);
          ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrDimGray);
          ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
@@ -62,6 +70,13 @@ public:
       m_core = false;
       m_market = false;
       m_reconciler = false;
+      m_buy_count = 0;
+      m_sell_count = 0;
+      m_buy_lots = 0.0;
+      m_sell_lots = 0.0;
+      m_buy_profit = 0.0;
+      m_sell_profit = 0.0;
+      m_total_profit = 0.0;
    }
 
    void Initialize()
@@ -105,7 +120,20 @@ public:
       Label("BID", 25, 110, "Bid       : " + DoubleToString(bid, Digits));
       Label("ASK", 25, 130, "Ask       : " + DoubleToString(ask, Digits));
       Label("SPREAD", 25, 150, "Spread    : " + DoubleToString(spread, Digits));
-      Label("TIME", 25, 190, "Server    : " + TimeToString(server_time, TIME_DATE|TIME_SECONDS));
+      Label("TIME", 25, 170, "Server    : " + TimeToString(server_time, TIME_DATE|TIME_SECONDS));
+   }
+
+   void SetExposure(int buy_count, double buy_lots, double buy_profit,
+                    int sell_count, double sell_lots, double sell_profit,
+                    double total_profit)
+   {
+      m_buy_count = buy_count;
+      m_buy_lots = buy_lots;
+      m_buy_profit = buy_profit;
+      m_sell_count = sell_count;
+      m_sell_lots = sell_lots;
+      m_sell_profit = sell_profit;
+      m_total_profit = total_profit;
    }
 
    void Render()
@@ -119,21 +147,26 @@ public:
       Label("STATUS", x, 75, "EA        : " + m_runtime_state);
       Label("SYMBOL", x, 95, "SYMBOL    : " + Symbol());
 
-      Label("MARKET", x, 175, "MARKET", 9);
+      Label("MARKET", x, 195, "MARKET", 9);
 
-      Label("RUNTIME", x, 215, "RUNTIME", 9);
-      Label("TICK", x, 235, "Tick      : " + IntegerToString((int)m_tick_count));
+      Label("RUNTIME", x, 235, "RUNTIME", 9);
+      Label("TICK", x, 255, "Tick      : " + IntegerToString((int)m_tick_count));
 
-      Label("MODULES", x, 270, "MODULES", 9);
-      Label("CORE", x, 290, "Core              [" + (m_core ? "OK" : "WAIT") + "]");
-      Label("MARKET_MODULE", x, 310, "MarketState       [" + (m_market ? "OK" : "WAIT") + "]");
-      Label("RECONCILER", x, 330, "StateReconciler   [" + (m_reconciler ? "OK" : "WAIT") + "]");
+      Label("EXPOSURE", x, 290, "EXPOSURE", 9);
+      Label("BUY", x, 310, "BUY       : " + IntegerToString(m_buy_count) + " | " + DoubleToString(m_buy_lots, 2) + " | " + DoubleToString(m_buy_profit, 2));
+      Label("SELL", x, 330, "SELL      : " + IntegerToString(m_sell_count) + " | " + DoubleToString(m_sell_lots, 2) + " | " + DoubleToString(m_sell_profit, 2));
+      Label("TOTAL", x, 350, "TOTAL P/L : " + DoubleToString(m_total_profit, 2));
 
-      Label("EVENT", 225, 270, "LAST EVENT", 9);
-      Label("LAST_EVENT", 225, 290, "> " + m_last_event);
+      Label("MODULES", 225, 55, "MODULES", 9);
+      Label("CORE", 225, 75, "Core            [" + (m_core ? "OK" : "WAIT") + "]");
+      Label("MARKET_MODULE", 225, 95, "MarketState     [" + (m_market ? "OK" : "WAIT") + "]");
+      Label("RECONCILER", 225, 115, "Reconciler      [" + (m_reconciler ? "OK" : "WAIT") + "]");
+
+      Label("EVENT", 225, 195, "LAST EVENT", 9);
+      Label("LAST_EVENT", 225, 215, "> " + m_last_event);
 
       if(m_error != "")
-         Label("ERROR", 225, 310, "> ERROR: " + m_error);
+         Label("ERROR", 225, 235, "> ERROR: " + m_error);
    }
 
    void Destroy()
