@@ -16,19 +16,20 @@ private:
    void UpdatePanel()
    {
       ExposureState exposure;
+      PendingState pending;
       m_reconciler.CopyExposureTo(exposure);
+      m_reconciler.CopyPendingTo(pending);
 
       m_panel.SetMarket(m_market.Bid(), m_market.Ask(), m_market.SpreadPoints(), m_market.ServerTime());
       m_panel.SetExposure(exposure.BuyCount(), exposure.BuyLots(), exposure.BuyProfit(),
                           exposure.SellCount(), exposure.SellLots(), exposure.SellProfit(),
                           exposure.TotalProfit());
+      m_panel.SetPending(pending.BuyStopCount(), pending.BuyStopTicket(), pending.BuyStopLots(), pending.BuyStopPrice(),
+                         pending.SellStopCount(), pending.SellStopTicket(), pending.SellStopLots(), pending.SellStopPrice());
    }
 
 public:
-   EAController()
-   {
-      m_initialized = false;
-   }
+   EAController() { m_initialized = false; }
 
    int Initialize()
    {
@@ -46,15 +47,14 @@ public:
       m_panel.SetLastEvent("Initial reconciliation OK");
       m_panel.Render();
 
-      Print("[ZGOLD] Fragment 02 initialized - observation only");
+      Print("[ZGOLD] Fragment 03 initialized - observation only");
       m_initialized = true;
       return INIT_SUCCEEDED;
    }
 
    void ProcessTick()
    {
-      if(!m_initialized)
-         return;
+      if(!m_initialized) return;
 
       m_market.Update();
       m_reconciler.Reconcile();
