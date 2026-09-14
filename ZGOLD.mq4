@@ -1,5 +1,5 @@
 #property strict
-#property version   "0.100"
+#property version   "1.000"
 #property description "ZGOLD - Behavioral Reconstruction"
 #property description "Fragment 03 - State + Pending + Lifecycle + Debug Panel"
 #property description "NO TRADING LOGIC"
