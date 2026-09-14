@@ -14,15 +14,9 @@ private:
    int            m_magic;
 
 public:
-   StateReconciler()
-   {
-      m_magic = 1001;
-   }
+   StateReconciler() { m_magic = 1001; }
 
-   void SetMagic(int magic)
-   {
-      m_magic = magic;
-   }
+   void SetMagic(int magic) { m_magic = magic; }
 
    bool Reconcile()
    {
@@ -38,12 +32,9 @@ public:
 
       for(int i = OrdersTotal() - 1; i >= 0; i--)
       {
-         if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
-            continue;
-         if(OrderSymbol() != Symbol())
-            continue;
-         if(OrderMagicNumber() != m_magic)
-            continue;
+         if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+         if(OrderSymbol() != Symbol()) continue;
+         if(OrderMagicNumber() != m_magic) continue;
 
          int type = OrderType();
 
@@ -59,21 +50,10 @@ public:
             sell_lots += OrderLots();
             sell_profit += OrderProfit() + OrderSwap() + OrderCommission();
          }
-         else if(type == OP_BUYSTOP)
+         else if(type == OP_BUYSTOP || type == OP_SELLSTOP ||
+                 type == OP_BUYLIMIT || type == OP_SELLLIMIT)
          {
-            m_pending.AddBuyStop(OrderTicket(), OrderLots(), OrderOpenPrice());
-         }
-         else if(type == OP_SELLSTOP)
-         {
-            m_pending.AddSellStop(OrderTicket(), OrderLots(), OrderOpenPrice());
-         }
-         else if(type == OP_BUYLIMIT)
-         {
-            m_pending.AddBuyLimit();
-         }
-         else if(type == OP_SELLLIMIT)
-         {
-            m_pending.AddSellLimit();
+            m_pending.Add(OrderTicket(), type, OrderLots(), OrderOpenPrice());
          }
       }
 
@@ -96,14 +76,8 @@ public:
    void CopyPendingTo(PendingState &target)
    {
       target.Reset();
-      if(m_pending.BuyStopCount() > 0)
-         target.AddBuyStop(m_pending.BuyStopTicket(), m_pending.BuyStopLots(), m_pending.BuyStopPrice());
-      if(m_pending.SellStopCount() > 0)
-         target.AddSellStop(m_pending.SellStopTicket(), m_pending.SellStopLots(), m_pending.SellStopPrice());
-      for(int i = 1; i < m_pending.BuyLimitCount(); i++)
-         target.AddBuyLimit();
-      for(int i = 1; i < m_pending.SellLimitCount(); i++)
-         target.AddSellLimit();
+      for(int i = 0; i < m_pending.Count(); i++)
+         target.Add(m_pending.Ticket(i), m_pending.Type(i), m_pending.Lots(i), m_pending.Price(i));
    }
 
    int LifecycleEvent() const { return m_lifecycle.Event(); }
