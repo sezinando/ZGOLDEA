@@ -80,6 +80,14 @@ public:
       m_lots = 0.0;
       m_price = 0.0;
       m_event_text = "WAITING";
+
+      for(int i = 0; i < ZGOLD_LIFECYCLE_MAX_ORDERS; i++)
+      {
+         m_prev_ticket[i] = -1;
+         m_prev_type[i] = -1;
+         m_prev_lots[i] = 0.0;
+         m_prev_price[i] = 0.0;
+      }
    }
 
    void Reconcile(int magic)
@@ -89,6 +97,14 @@ public:
       double cur_lots[ZGOLD_LIFECYCLE_MAX_ORDERS];
       double cur_price[ZGOLD_LIFECYCLE_MAX_ORDERS];
       int cur_count = 0;
+
+      for(int init = 0; init < ZGOLD_LIFECYCLE_MAX_ORDERS; init++)
+      {
+         cur_ticket[init] = -1;
+         cur_type[init] = -1;
+         cur_lots[init] = 0.0;
+         cur_price[init] = 0.0;
+      }
 
       m_event = ZGOLD_LIFE_NONE;
       m_ticket = -1;
@@ -166,7 +182,7 @@ public:
             if(found)
                continue;
 
-            int history_type = -1;
+            int history_type = m_prev_type[p];
             double history_lots = m_prev_lots[p];
             double history_price = m_prev_price[p];
 
@@ -184,10 +200,9 @@ public:
                break;
             }
 
-            if(IsPendingType(history_type) || IsPendingType(m_prev_type[p]))
+            if(IsPendingType(history_type))
             {
-               SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p],
-                        (history_type >= 0 ? history_type : m_prev_type[p]),
+               SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p], history_type,
                         history_lots, history_price,
                         "DELETED #" + IntegerToString(m_prev_ticket[p]));
                break;
