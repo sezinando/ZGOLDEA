@@ -3,13 +3,15 @@
 
 #include "ExposureState.mqh"
 #include "PendingState.mqh"
+#include "LifecycleState.mqh"
 
 class StateReconciler
 {
 private:
-   ExposureState m_exposure;
-   PendingState  m_pending;
-   int           m_magic;
+   ExposureState  m_exposure;
+   PendingState   m_pending;
+   LifecycleState m_lifecycle;
+   int            m_magic;
 
 public:
    StateReconciler()
@@ -32,16 +34,14 @@ public:
       double sell_profit = 0.0;
 
       m_pending.Reset();
+      m_lifecycle.Reconcile(m_magic);
 
       for(int i = OrdersTotal() - 1; i >= 0; i--)
       {
          if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
             continue;
-
-         // ZGOLD must observe only its own orders.
          if(OrderSymbol() != Symbol())
             continue;
-
          if(OrderMagicNumber() != m_magic)
             continue;
 
@@ -96,19 +96,21 @@ public:
    void CopyPendingTo(PendingState &target)
    {
       target.Reset();
-
       if(m_pending.BuyStopCount() > 0)
          target.AddBuyStop(m_pending.BuyStopTicket(), m_pending.BuyStopLots(), m_pending.BuyStopPrice());
-
       if(m_pending.SellStopCount() > 0)
          target.AddSellStop(m_pending.SellStopTicket(), m_pending.SellStopLots(), m_pending.SellStopPrice());
-
       for(int i = 1; i < m_pending.BuyLimitCount(); i++)
          target.AddBuyLimit();
-
       for(int i = 1; i < m_pending.SellLimitCount(); i++)
          target.AddSellLimit();
    }
+
+   int LifecycleEvent() const { return m_lifecycle.Event(); }
+   int LifecycleTicket() const { return m_lifecycle.Ticket(); }
+   double LifecycleLots() const { return m_lifecycle.Lots(); }
+   double LifecyclePrice() const { return m_lifecycle.Price(); }
+   string LifecycleText() const { return m_lifecycle.EventText(); }
 };
 
 #endif
