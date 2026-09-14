@@ -31,50 +31,50 @@ private:
    int    m_type;
    double m_lots;
    double m_price;
+   int    m_previous_type;
+   double m_previous_lots;
+   double m_previous_price;
    string m_event_text;
 
    int FindPrevious(int ticket)
    {
       for(int i = 0; i < m_prev_count; i++)
-      {
-         if(m_prev_ticket[i] == ticket)
-            return i;
-      }
+         if(m_prev_ticket[i] == ticket) return i;
       return -1;
    }
 
    bool IsPendingType(int type)
    {
-      return (type == OP_BUYSTOP || type == OP_SELLSTOP ||
-              type == OP_BUYLIMIT || type == OP_SELLLIMIT);
+      return (type == OP_BUYSTOP || type == OP_SELLSTOP || type == OP_BUYLIMIT || type == OP_SELLLIMIT);
    }
 
    string TypeName(int type)
    {
-      if(type == OP_BUY)       return "BUY";
-      if(type == OP_SELL)      return "SELL";
-      if(type == OP_BUYSTOP)   return "BUY STOP";
-      if(type == OP_SELLSTOP)  return "SELL STOP";
-      if(type == OP_BUYLIMIT)  return "BUY LIMIT";
+      if(type == OP_BUY) return "BUY";
+      if(type == OP_SELL) return "SELL";
+      if(type == OP_BUYSTOP) return "BUY STOP";
+      if(type == OP_SELLSTOP) return "SELL STOP";
+      if(type == OP_BUYLIMIT) return "BUY LIMIT";
       if(type == OP_SELLLIMIT) return "SELL LIMIT";
       return "UNKNOWN";
    }
 
-   void SetEvent(int event_code, int ticket, int type, double lots, double price, string text)
+   void SetEvent(int event_code, int ticket, int type, double lots, double price,
+                 int previous_type, double previous_lots, double previous_price, string text)
    {
       m_event = event_code;
       m_ticket = ticket;
       m_type = type;
       m_lots = lots;
       m_price = price;
+      m_previous_type = previous_type;
+      m_previous_lots = previous_lots;
+      m_previous_price = previous_price;
       m_event_text = text;
    }
 
 public:
-   LifecycleState()
-   {
-      Reset();
-   }
+   LifecycleState() { Reset(); }
 
    void Reset()
    {
@@ -86,6 +86,9 @@ public:
       m_type = -1;
       m_lots = 0.0;
       m_price = 0.0;
+      m_previous_type = -1;
+      m_previous_lots = 0.0;
+      m_previous_price = 0.0;
       m_event_text = "WAITING";
 
       for(int i = 0; i < ZGOLD_LIFECYCLE_MAX_ORDERS; i++)
@@ -109,14 +112,15 @@ public:
       m_type = -1;
       m_lots = 0.0;
       m_price = 0.0;
+      m_previous_type = -1;
+      m_previous_lots = 0.0;
+      m_previous_price = 0.0;
       m_event_text = "NO CHANGE";
 
       for(int i = OrdersTotal() - 1; i >= 0 && m_cur_count < ZGOLD_LIFECYCLE_MAX_ORDERS; i--)
       {
-         if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
-            continue;
-         if(OrderSymbol() != Symbol() || OrderMagicNumber() != magic)
-            continue;
+         if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+         if(OrderSymbol() != Symbol() || OrderMagicNumber() != magic) continue;
 
          m_cur_ticket[m_cur_count] = OrderTicket();
          m_cur_type[m_cur_count] = OrderType();
@@ -127,7 +131,7 @@ public:
 
       if(!m_initialized)
       {
-         SetEvent(ZGOLD_LIFE_SNAPSHOT, -1, -1, 0.0, 0.0, "INITIAL SNAPSHOT");
+         SetEvent(ZGOLD_LIFE_SNAPSHOT, -1, -1, 0.0, 0.0, -1, 0.0, 0.0, "INITIAL SNAPSHOT");
          m_initialized = true;
       }
       else
@@ -135,37 +139,31 @@ public:
          for(int c = 0; c < m_cur_count && m_event == ZGOLD_LIFE_NONE; c++)
          {
             int p = FindPrevious(m_cur_ticket[c]);
-
             if(p < 0)
             {
-               SetEvent(ZGOLD_LIFE_CREATED, m_cur_ticket[c], m_cur_type[c],
-                        m_cur_lots[c], m_cur_price[c],
+               SetEvent(ZGOLD_LIFE_CREATED, m_cur_ticket[c], m_cur_type[c], m_cur_lots[c], m_cur_price[c],
+                        -1, 0.0, 0.0,
                         "CREATED #" + IntegerToString(m_cur_ticket[c]) + " " + TypeName(m_cur_type[c]));
                break;
             }
 
-            if(m_prev_type[p] != m_cur_type[c])
+            if(m_prev_type[p] != m_cur_type[c] && IsPendingType(m_prev_type[p]) &&
+               (m_cur_type[c] == OP_BUY || m_cur_type[c] == OP_SELL))
             {
-               if(IsPendingType(m_prev_type[p]) &&
-                  (m_cur_type[c] == OP_BUY || m_cur_type[c] == OP_SELL))
-               {
-                  SetEvent(ZGOLD_LIFE_EXECUTED, m_cur_ticket[c], m_cur_type[c],
-                           m_cur_lots[c], m_cur_price[c],
-                           "EXECUTED #" + IntegerToString(m_cur_ticket[c]) + " -> " + TypeName(m_cur_type[c]));
-                  break;
-               }
+               SetEvent(ZGOLD_LIFE_EXECUTED, m_cur_ticket[c], m_cur_type[c], m_cur_lots[c], m_cur_price[c],
+                        m_prev_type[p], m_prev_lots[p], m_prev_price[p],
+                        "EXECUTED #" + IntegerToString(m_cur_ticket[c]) + " -> " + TypeName(m_cur_type[c]));
+               break;
             }
 
-            if(m_prev_type[p] == m_cur_type[c] && IsPendingType(m_cur_type[c]))
+            if(m_prev_type[p] == m_cur_type[c] && IsPendingType(m_cur_type[c]) &&
+               (MathAbs(m_prev_price[p] - m_cur_price[c]) > Point * 0.1 ||
+                MathAbs(m_prev_lots[p] - m_cur_lots[c]) > 0.0000001))
             {
-               if(MathAbs(m_prev_price[p] - m_cur_price[c]) > Point * 0.1 ||
-                  MathAbs(m_prev_lots[p] - m_cur_lots[c]) > 0.0000001)
-               {
-                  SetEvent(ZGOLD_LIFE_MODIFIED, m_cur_ticket[c], m_cur_type[c],
-                           m_cur_lots[c], m_cur_price[c],
-                           "MODIFIED #" + IntegerToString(m_cur_ticket[c]) + " " + TypeName(m_cur_type[c]));
-                  break;
-               }
+               SetEvent(ZGOLD_LIFE_MODIFIED, m_cur_ticket[c], m_cur_type[c], m_cur_lots[c], m_cur_price[c],
+                        m_prev_type[p], m_prev_lots[p], m_prev_price[p],
+                        "MODIFIED #" + IntegerToString(m_cur_ticket[c]) + " " + TypeName(m_cur_type[c]));
+               break;
             }
          }
 
@@ -174,18 +172,10 @@ public:
             for(int p2 = 0; p2 < m_prev_count; p2++)
             {
                bool found = false;
-
                for(int c2 = 0; c2 < m_cur_count; c2++)
-               {
-                  if(m_cur_ticket[c2] == m_prev_ticket[p2])
-                  {
-                     found = true;
-                     break;
-                  }
-               }
+                  if(m_cur_ticket[c2] == m_prev_ticket[p2]) { found = true; break; }
 
-               if(found)
-                  continue;
+               if(found) continue;
 
                int history_type = m_prev_type[p2];
                double history_lots = m_prev_lots[p2];
@@ -200,17 +190,17 @@ public:
 
                if(history_type == OP_BUY || history_type == OP_SELL)
                {
-                  SetEvent(ZGOLD_LIFE_CLOSED, m_prev_ticket[p2], history_type,
-                           history_lots, history_price,
+                  SetEvent(ZGOLD_LIFE_CLOSED, m_prev_ticket[p2], history_type, history_lots, history_price,
+                           history_type, history_lots, history_price,
                            "CLOSED #" + IntegerToString(m_prev_ticket[p2]) + " " + TypeName(history_type));
                   break;
                }
 
                if(IsPendingType(history_type))
                {
-                  SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p2], history_type,
-                           history_lots, history_price,
-                           "DELETED #" + IntegerToString(m_prev_ticket[p2]));
+                  SetEvent(ZGOLD_LIFE_DELETED, m_prev_ticket[p2], history_type, history_lots, history_price,
+                           history_type, history_lots, history_price,
+                           "DELETED #" + IntegerToString(m_prev_ticket[p2]) + " " + TypeName(history_type));
                   break;
                }
             }
@@ -232,6 +222,9 @@ public:
    int Type() const { return m_type; }
    double Lots() const { return m_lots; }
    double Price() const { return m_price; }
+   int PreviousType() const { return m_previous_type; }
+   double PreviousLots() const { return m_previous_lots; }
+   double PreviousPrice() const { return m_previous_price; }
    string EventText() const { return m_event_text; }
 };
 
