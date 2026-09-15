@@ -21,7 +21,7 @@ public:
       s_firststep=firststep; s_mindistance=mindistance; s_steptrall=steptrall;
       s_step=step; s_twostep=twostep; s_twomindistance=twomindistance;
       s_stopprofit=stopprofit; s_closeall=closeall; s_maxloss=maxloss; s_maxlosscloseall=maxlosscloseall;
-      s_maxspread=maxspread; s_magic=magic;
+      s_maxspread=s_maxspread; s_magic=magic;
    }
    static double Lot(){return s_lot;}
    static double KLot(){return s_klot;}
@@ -40,6 +40,8 @@ public:
    static double MaxLossCloseAll(){return s_maxlosscloseall;}
    static int MaxSpreadPoints(){return s_maxspread;}
    static int PendingConflictPoints(){return 5;}
+   static int CompressionMinCount(){return 3;}
+   static double CompressionLotMultiplier(){return 3.0;}
    static int Magic(){return s_magic;}
 };
 
