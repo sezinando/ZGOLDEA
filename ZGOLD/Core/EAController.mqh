@@ -19,24 +19,132 @@
 #include "../Engine/LotEngine.mqh"
 #include "../Engine/BasketEngine.mqh"
 #include "../Engine/BasketDecisionObserver.mqh"
+#include "../Engine/ExecutionEngine.mqh"
 #include "../Config/ZGoldParams.mqh"
+
 class EAController
 {
 private:
- MarketState m_market; StateReconciler m_reconciler; DebugPanel m_panel; PendingTrailingObserver m_trailing; PendingTrailingDecisionObserver m_trailing_decision; PendingTrailingExecutionObserver m_trailing_execution; OperationalState m_operational_state; GeometryObserver m_geometry; LayerEngineObserver m_layer; ReferenceStructureResolver m_reference; ExitEngineObserver m_exit; CloseByObserver m_closeby; ExitDecisionObserver m_exit_decision; RecoveryCycleObserver m_recovery; PendingExecutionObserver m_pending_execution; LayerCreationObserver m_layer_creation; LotEngine m_lot; BasketEngine m_basket; BasketDecisionObserver m_basket_decision; bool m_initialized; int m_magic;
- void UpdateTrailingObserver(PendingState &p){m_trailing.EvaluateAll(p,m_market.Bid(),m_market.Ask());int tickets[ZGOLD_TRAIL_MAX];int types[ZGOLD_TRAIL_MAX];double deltas[ZGOLD_TRAIL_MAX];string classes[ZGOLD_TRAIL_MAX];bool valids[ZGOLD_TRAIL_MAX];for(int i=0;i<ZGOLD_TRAIL_MAX;i++){tickets[i]=m_trailing.Ticket(i);types[i]=m_trailing.Type(i);deltas[i]=m_trailing.Delta(i);classes[i]=m_trailing.DistanceClass(i);valids[i]=m_trailing.Valid(i);}m_panel.SetTrailingInventory(m_trailing.Count(),tickets,types,deltas,classes,valids);}
- void UpdateDecisionObserver(PendingState &p){m_trailing_decision.Evaluate(p,m_trailing,m_market.Bid(),m_market.Ask());m_panel.SetDecisionAction(m_trailing_decision.DecisionText(m_trailing),m_trailing_decision.ActionText(m_trailing),m_trailing_decision.ReasonText(m_trailing),m_trailing_decision.DecisionTicket(m_trailing));m_trailing_execution.Evaluate(p,m_trailing,m_trailing_decision,m_market.Bid(),m_market.Ask());}
- void UpdateGeometryObserver(PendingState &p,ExposureState &e){double candidate=0.0;int direction=-1;int ticket=m_trailing_decision.DecisionTicket(m_trailing);if(ticket>=0){for(int i=0;i<p.Count();i++)if(p.Ticket(i)==ticket){candidate=p.Price(i);direction=(p.Type(i)==OP_BUYSTOP?OP_BUY:OP_SELL);break;}}m_geometry.Evaluate(candidate,direction,e,p);m_panel.SetGeometry(m_geometry.Status(),m_geometry.Reason(),m_geometry.Candidate(),m_geometry.StepDistance(),m_geometry.TwoStepDistance());}
- void UpdateLayerObserver(ExposureState &e,PendingState &p){m_layer.Evaluate(e,p);m_panel.SetLayer(m_layer.BuyState(),m_layer.SellState(),m_layer.BuyRegime(),m_layer.SellRegime(),m_layer.BuyMin(),m_layer.BuyMax(),m_layer.SellMin(),m_layer.SellMax(),m_layer.BuyReference(),m_layer.SellReference());m_layer_creation.Evaluate(e,p);m_reference.Evaluate(e,p,m_magic);}
+ MarketState m_market;
+ StateReconciler m_reconciler;
+ DebugPanel m_panel;
+ PendingTrailingObserver m_trailing;
+ PendingTrailingDecisionObserver m_trailing_decision;
+ PendingTrailingExecutionObserver m_trailing_execution;
+ OperationalState m_operational_state;
+ GeometryObserver m_geometry;
+ LayerEngineObserver m_layer;
+ ReferenceStructureResolver m_reference;
+ ExitEngineObserver m_exit;
+ CloseByObserver m_closeby;
+ ExitDecisionObserver m_exit_decision;
+ RecoveryCycleObserver m_recovery;
+ PendingExecutionObserver m_pending_execution;
+ LayerCreationObserver m_layer_creation;
+ LotEngine m_lot;
+ BasketEngine m_basket;
+ BasketDecisionObserver m_basket_decision;
+ ExecutionEngine m_execution;
+ bool m_initialized;
+ int m_magic;
+ bool m_execution_enabled;
+ int m_execution_mode;
+ int m_slippage;
+
+ void UpdateTrailingObserver(PendingState &p)
+ {
+   m_trailing.EvaluateAll(p,m_market.Bid(),m_market.Ask());
+   int tickets[ZGOLD_TRAIL_MAX];int types[ZGOLD_TRAIL_MAX];double deltas[ZGOLD_TRAIL_MAX];string classes[ZGOLD_TRAIL_MAX];bool valids[ZGOLD_TRAIL_MAX];
+   for(int i=0;i<ZGOLD_TRAIL_MAX;i++){tickets[i]=m_trailing.Ticket(i);types[i]=m_trailing.Type(i);deltas[i]=m_trailing.Delta(i);classes[i]=m_trailing.DistanceClass(i);valids[i]=m_trailing.Valid(i);}
+   m_panel.SetTrailingInventory(m_trailing.Count(),tickets,types,deltas,classes,valids);
+ }
+
+ void UpdateDecisionObserver(PendingState &p)
+ {
+   m_trailing_decision.Evaluate(p,m_trailing,m_market.Bid(),m_market.Ask());
+   m_panel.SetDecisionAction(m_trailing_decision.DecisionText(m_trailing),m_trailing_decision.ActionText(m_trailing),m_trailing_decision.ReasonText(m_trailing),m_trailing_decision.DecisionTicket(m_trailing));
+   m_trailing_execution.Evaluate(p,m_trailing,m_trailing_decision,m_market.Bid(),m_market.Ask());
+ }
+
+ void UpdateGeometryObserver(PendingState &p,ExposureState &e)
+ {
+   double candidate=0.0;int direction=-1;int ticket=m_trailing_decision.DecisionTicket(m_trailing);
+   if(ticket>=0){for(int i=0;i<p.Count();i++)if(p.Ticket(i)==ticket){candidate=p.Price(i);direction=(p.Type(i)==OP_BUYSTOP?OP_BUY:OP_SELL);break;}}
+   m_geometry.Evaluate(candidate,direction,e,p);
+   m_panel.SetGeometry(m_geometry.Status(),m_geometry.Reason(),m_geometry.Candidate(),m_geometry.StepDistance(),m_geometry.TwoStepDistance());
+ }
+
+ void UpdateLayerObserver(ExposureState &e,PendingState &p)
+ {
+   m_layer.Evaluate(e,p);
+   m_panel.SetLayer(m_layer.BuyState(),m_layer.SellState(),m_layer.BuyRegime(),m_layer.SellRegime(),m_layer.BuyMin(),m_layer.BuyMax(),m_layer.SellMin(),m_layer.SellMax(),m_layer.BuyReference(),m_layer.SellReference());
+   m_layer_creation.Evaluate(e,p);
+   m_reference.Evaluate(e,p,m_magic);
+ }
+
  void UpdateLotObserver(ExposureState &e){m_lot.SyncFromCounts(e.BuyCount(),e.SellCount());}
- void UpdateBasketObserver(ExposureState &e){m_basket.Evaluate(e,m_magic);m_basket_decision.Evaluate(m_basket);if(m_basket_decision.Decision()==ZGOLD_BASKET_DECISION_CLOSE){Print("[ZGOLD][BASKET OBSERVER] ",m_basket_decision.Reason()," direction=",m_basket_decision.Direction()," count=",m_basket_decision.Count()," profit=",DoubleToString(m_basket_decision.Profit(),2)," target=",DoubleToString(m_basket_decision.Target(),2));}}
- void UpdateExitObserver(ExposureState &e){m_exit.Evaluate(e,m_magic);m_closeby.Evaluate(m_magic);bool closeby_mode=m_exit.GlobalTriggered();m_exit_decision.Evaluate(m_exit,m_closeby,closeby_mode);m_recovery.Evaluate(m_magic,m_exit.GlobalTriggered());m_pending_execution.Evaluate(m_reconciler.LifecycleEvent(),m_reconciler.LifecycleTicket(),m_reconciler.LifecycleType(),m_reconciler.LifecycleLots(),m_reconciler.LifecyclePrice());string text="NONE";string reason="NO EXIT TRIGGER";double value=m_exit.TotalProfit();double target=0;double result=m_exit.CompressionResult();int ticket=-1,loss1=-1,loss2=-1;if(m_exit_decision.Decision()==ZGOLD_EXIT_DEC_CONFLICT){text="CONFLICT";reason=m_exit_decision.Reason();}else if(m_exit.BasketTriggered()){text="BASKET";reason="DIRECTIONAL PROFIT >= COUNT*STOPPROFIT";value=m_exit.BasketProfit();target=m_exit.BasketTarget();}else if(m_exit.CompressionTriggered()){text="COMPRESSION";reason="WINNER + 2 WORST | EXPOSURE GATE";value=m_exit.WinnerProfit();ticket=m_exit.WinnerTicket();loss1=m_exit.Loss1Ticket();loss2=m_exit.Loss2Ticket();}else if(m_exit.GlobalTriggered()){text="GLOBAL EXIT";reason="TOTAL PROFIT >= CLOSEALLTHRESHOLD";}if(m_exit.CapacityWarning())Print("[ZGOLD][WARNING] EXIT POSITION CAPACITY LIMIT REACHED");if(m_recovery.Status()!=ZGOLD_RECOVERY_NONE)Print("[ZGOLD][RECOVERY] ",m_recovery.Reason());if(m_pending_execution.Status()==ZGOLD_EXEC_EXECUTED)Print("[ZGOLD][EXECUTION OBSERVER] ",m_pending_execution.Reason()," #",m_pending_execution.Ticket());if(m_layer_creation.Status()!=ZGOLD_LAYER_CREATE_NONE)Print("[ZGOLD][LAYER CREATION] ",m_layer_creation.Reason()," #",m_layer_creation.SourceTicket());if(m_trailing_execution.Status()==ZGOLD_TRAIL_EXEC_MODIFY)Print("[ZGOLD][TRAIL EXECUTION OBSERVER] ",m_trailing_execution.Reason()," #",m_trailing_execution.Ticket()," candidate=",DoubleToString(m_trailing_execution.CandidatePrice(),Digits));m_panel.SetExit(text,reason,value,target,result,ticket,loss1,loss2);m_panel.SetDecisionAction(m_exit_decision.Action(),m_exit_decision.Action(),m_exit_decision.Reason(),m_exit_decision.Ticket());}
- void UpdatePanel(){ExposureState e;PendingState p;m_reconciler.CopyExposureTo(e);m_reconciler.CopyPendingTo(p);m_operational_state.Evaluate(e,p);m_panel.SetMarket(m_market.Bid(),m_market.Ask(),m_market.SpreadPoints(),m_market.ServerTime());m_panel.SetExposure(e.BuyCount(),e.BuyLots(),e.BuyProfit(),e.SellCount(),e.SellLots(),e.SellProfit(),e.TotalProfit());m_panel.SetPending(p);m_panel.SetOperationalState(m_operational_state.State(),m_operational_state.Reason());m_panel.SetLifecycle(m_reconciler.LifecycleEvent(),m_reconciler.LifecycleTicket(),m_reconciler.LifecyclePreviousType(),m_reconciler.LifecycleType(),m_reconciler.LifecyclePreviousLots(),m_reconciler.LifecycleLots(),m_reconciler.LifecyclePreviousPrice(),m_reconciler.LifecyclePrice(),m_reconciler.LifecycleText());UpdateTrailingObserver(p);UpdateDecisionObserver(p);UpdateGeometryObserver(p,e);UpdateLayerObserver(e,p);UpdateLotObserver(e);UpdateBasketObserver(e);UpdateExitObserver(e);}
+
+ void UpdateBasketObserver(ExposureState &e)
+ {
+   m_basket.Evaluate(e,m_magic);m_basket_decision.Evaluate(m_basket);
+   if(m_basket_decision.Decision()==ZGOLD_BASKET_DECISION_CLOSE)
+      Print("[ZGOLD][BASKET OBSERVER] ",m_basket_decision.Reason()," direction=",m_basket_decision.Direction()," count=",m_basket_decision.Count()," profit=",DoubleToString(m_basket_decision.Profit(),2)," target=",DoubleToString(m_basket_decision.Target(),2));
+ }
+
+ void UpdateExitObserver(ExposureState &e)
+ {
+   m_exit.Evaluate(e,m_magic);m_closeby.Evaluate(m_magic);bool closeby_mode=m_exit.GlobalTriggered();m_exit_decision.Evaluate(m_exit,m_closeby,closeby_mode);
+   m_recovery.Evaluate(m_magic,m_exit.GlobalTriggered());
+   m_pending_execution.Evaluate(m_reconciler.LifecycleEvent(),m_reconciler.LifecycleTicket(),m_reconciler.LifecycleType(),m_reconciler.LifecycleLots(),m_reconciler.LifecyclePrice());
+   string text="NONE";string reason="NO EXIT TRIGGER";double value=m_exit.TotalProfit();double target=0;double result=m_exit.CompressionResult();int ticket=-1,loss1=-1,loss2=-1;
+   if(m_exit_decision.Decision()==ZGOLD_EXIT_DEC_CONFLICT){text="CONFLICT";reason=m_exit_decision.Reason();}
+   else if(m_exit.BasketTriggered()){text="BASKET";reason="DIRECTIONAL PROFIT >= COUNT*STOPPROFIT";value=m_exit.BasketProfit();target=m_exit.BasketTarget();}
+   else if(m_exit.CompressionTriggered()){text="COMPRESSION";reason="WINNER + 2 WORST | EXPOSURE GATE";value=m_exit.WinnerProfit();ticket=m_exit.WinnerTicket();loss1=m_exit.Loss1Ticket();loss2=m_exit.Loss2Ticket();}
+   else if(m_exit.GlobalTriggered()){text="GLOBAL EXIT";reason="TOTAL PROFIT >= CLOSEALLTHRESHOLD";}
+   if(m_exit.CapacityWarning())Print("[ZGOLD][WARNING] EXIT POSITION CAPACITY LIMIT REACHED");
+   if(m_recovery.Status()!=ZGOLD_RECOVERY_NONE)Print("[ZGOLD][RECOVERY] ",m_recovery.Reason());
+   if(m_pending_execution.Status()==ZGOLD_EXEC_EXECUTED)Print("[ZGOLD][EXECUTION OBSERVER] ",m_pending_execution.Reason()," #",m_pending_execution.Ticket());
+   if(m_layer_creation.Status()!=ZGOLD_LAYER_CREATE_NONE)Print("[ZGOLD][LAYER CREATION] ",m_layer_creation.Reason()," #",m_layer_creation.SourceTicket());
+   if(m_trailing_execution.Status()==ZGOLD_TRAIL_EXEC_MODIFY)Print("[ZGOLD][TRAIL EXECUTION OBSERVER] ",m_trailing_execution.Reason()," #",m_trailing_execution.Ticket()," candidate=",DoubleToString(m_trailing_execution.CandidatePrice(),Digits));
+   m_panel.SetExit(text,reason,value,target,result,ticket,loss1,loss2);m_panel.SetDecisionAction(m_exit_decision.Action(),m_exit_decision.Action(),m_exit_decision.Reason(),m_exit_decision.Ticket());
+ }
+
+ void ExecuteCurrentState()
+ {
+   if(!m_execution.Enabled())return;
+   // Observed actions are applied only after state reconciliation and observer evaluation.
+   // The experimental test profile gives Global > CloseBy > Compression > Basket precedence
+   // for backtest execution; this is a test policy, not a simultaneous-trigger Zeus proof.
+   m_execution.ExecuteTrailing(m_trailing_execution);
+   m_execution.ExecuteExit(m_exit_decision,m_closeby);
+   m_execution.ExecuteExpansionAfterExecution(m_pending_execution,m_market.Bid(),m_market.Ask());
+   m_execution.EnsureInitialStructure(m_market.Bid(),m_market.Ask());
+ }
+
+ void UpdatePanel()
+ {
+   ExposureState e;PendingState p;m_reconciler.CopyExposureTo(e);m_reconciler.CopyPendingTo(p);m_operational_state.Evaluate(e,p);
+   m_panel.SetMarket(m_market.Bid(),m_market.Ask(),m_market.SpreadPoints(),m_market.ServerTime());
+   m_panel.SetExposure(e.BuyCount(),e.BuyLots(),e.BuyProfit(),e.SellCount(),e.SellLots(),e.SellProfit(),e.TotalProfit());
+   m_panel.SetPending(p);m_panel.SetOperationalState(m_operational_state.State(),m_operational_state.Reason());
+   m_panel.SetLifecycle(m_reconciler.LifecycleEvent(),m_reconciler.LifecycleTicket(),m_reconciler.LifecyclePreviousType(),m_reconciler.LifecycleType(),m_reconciler.LifecyclePreviousLots(),m_reconciler.LifecycleLots(),m_reconciler.LifecyclePreviousPrice(),m_reconciler.LifecyclePrice(),m_reconciler.LifecycleText());
+   UpdateTrailingObserver(p);UpdateDecisionObserver(p);UpdateGeometryObserver(p,e);UpdateLayerObserver(e,p);UpdateLotObserver(e);UpdateBasketObserver(e);UpdateExitObserver(e);
+ }
+
 public:
- EAController(){m_initialized=false;m_magic=ZGoldParams::Magic();}
+ EAController(){m_initialized=false;m_magic=ZGoldParams::Magic();m_execution_enabled=false;m_execution_mode=ZGOLD_EXEC_TEST;m_slippage=20;}
+ void ConfigureExecution(bool enabled,int mode,int slippage){m_execution_enabled=enabled;m_execution_mode=mode;m_slippage=slippage;}
  void SetMagic(int magic){m_magic=magic;m_reconciler.SetMagic(magic);}
- int Initialize(){m_panel.Initialize();m_panel.SetModuleStatus("CORE",true);m_panel.SetModuleStatus("MARKET STATE",true);m_panel.SetModuleStatus("STATE RECONCILER",true);m_panel.SetModuleStatus("PENDING TRAILING",true);m_panel.SetModuleStatus("OPERATIONAL STATE",true);m_panel.SetModuleStatus("DECISION OBSERVER",true);m_panel.SetModuleStatus("CANDIDATE OBSERVER",true);m_panel.SetModuleStatus("GEOMETRY OBSERVER",true);m_panel.SetModuleStatus("LAYER ENGINE OBSERVER",true);m_panel.SetModuleStatus("EXIT ENGINE OBSERVER",true);m_panel.SetModuleStatus("CLOSEBY OBSERVER",true);m_panel.SetModuleStatus("EXIT DECISION OBSERVER",true);m_panel.SetLastEvent("EA initialized");m_reconciler.SetMagic(m_magic);m_lot.Configure(ZGoldParams::Lot(),ZGoldParams::KLot(),ZGoldParams::PlusLot(),ZGoldParams::DigitsLot(),ZGoldParams::MaxLot());m_lot.Reset();m_market.Update();m_reconciler.Reconcile();UpdatePanel();m_panel.SetRuntimeState("RUNNING");m_panel.SetLastEvent(m_reconciler.LifecycleText());m_panel.Render();Print("[ZGOLD] Stage 84 reference resolver + explicit exit conflicts initialized");m_initialized=true;return INIT_SUCCEEDED;}
- void ProcessTick(){if(!m_initialized)return;m_market.Update();m_reconciler.Reconcile();m_panel.IncrementTick();UpdatePanel();m_panel.SetLastEvent(m_reconciler.LifecycleText());m_panel.Render();}
+ int Initialize()
+ {
+   m_panel.Initialize();
+   m_panel.SetModuleStatus("CORE",true);m_panel.SetModuleStatus("MARKET STATE",true);m_panel.SetModuleStatus("STATE RECONCILER",true);m_panel.SetModuleStatus("PENDING TRAILING",true);m_panel.SetModuleStatus("OPERATIONAL STATE",true);m_panel.SetModuleStatus("DECISION OBSERVER",true);m_panel.SetModuleStatus("CANDIDATE OBSERVER",true);m_panel.SetModuleStatus("GEOMETRY OBSERVER",true);m_panel.SetModuleStatus("LAYER ENGINE OBSERVER",true);m_panel.SetModuleStatus("EXIT ENGINE OBSERVER",true);m_panel.SetModuleStatus("CLOSEBY OBSERVER",true);m_panel.SetModuleStatus("EXIT DECISION OBSERVER",true);m_panel.SetModuleStatus("EXECUTION ENGINE",m_execution_enabled);
+   m_panel.SetLastEvent("EA initialized");m_reconciler.SetMagic(m_magic);m_lot.Configure(ZGoldParams::Lot(),ZGoldParams::KLot(),ZGoldParams::PlusLot(),ZGoldParams::DigitsLot(),ZGoldParams::MaxLot());m_lot.Reset();
+   m_execution.Configure(m_magic,m_execution_enabled,m_execution_mode,m_slippage);
+   m_market.Update();m_reconciler.Reconcile();UpdatePanel();ExecuteCurrentState();m_panel.SetRuntimeState("RUNNING");m_panel.SetLastEvent(m_reconciler.LifecycleText());m_panel.Render();
+   Print("[ZGOLD] Stage 97 execution adapter initialized; mode=",m_execution_mode," enabled=",m_execution_enabled);m_initialized=true;return INIT_SUCCEEDED;
+ }
+ void ProcessTick(){if(!m_initialized)return;m_market.Update();m_reconciler.Reconcile();m_panel.IncrementTick();UpdatePanel();ExecuteCurrentState();m_panel.SetLastEvent(m_reconciler.LifecycleText());m_panel.Render();}
  void Shutdown(const int reason){m_panel.SetRuntimeState("STOPPED");m_panel.SetLastEvent("EA deinitialized");m_panel.Render();m_panel.Destroy();Print("[ZGOLD] Debug Panel removed. Reason=",reason);m_initialized=false;}
 };
 #endif
