@@ -18,7 +18,7 @@ private:
    bool   m_valid;
    string m_reason;
 
-   string TypeName(int type)
+   string TypeName(int type) const
    {
       if(type == OP_BUYSTOP) return "BUY STOP";
       if(type == OP_SELLSTOP) return "SELL STOP";
