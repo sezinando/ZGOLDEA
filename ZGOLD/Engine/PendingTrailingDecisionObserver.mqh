@@ -84,7 +84,18 @@ public:
          }
 
          m_reference_baseline[k] = old_baseline[old_index];
-         m_reference_move[k] = MathAbs(current_ref - m_reference_baseline[k]);
+
+         // Pending-stop trailing is directional, not absolute.
+         // BUY STOP trails DOWN as ASK falls toward the pending price.
+         // SELL STOP trails UP as BID rises toward the pending price.
+         // When the market reverses, the pending price must remain frozen;
+         // otherwise the target moves away again and can become unreachable.
+         if(p.Type(k) == OP_BUYSTOP)
+            m_reference_move[k] = m_reference_baseline[k] - current_ref;
+         else if(p.Type(k) == OP_SELLSTOP)
+            m_reference_move[k] = current_ref - m_reference_baseline[k];
+         else
+            m_reference_move[k] = 0.0;
 
          double trigger_distance=ZGoldParams::StepTrallOrders();
          if(m_reference_move[k] >= trigger_distance - Point * 0.1 &&
@@ -93,8 +104,8 @@ public:
             trail.DistanceClass(k) != "UNRESOLVED")
          {
             m_triggered[k] = true;
-            // Re-arm from the new reference after the corresponding pending
-            // price adjustment. The trigger distance is runtime-configured.
+            // Re-arm from the new market reference after the pending-price
+            // adjustment. Movement in the opposite direction does not re-arm.
             m_reference_baseline[k] = current_ref;
          }
       }
@@ -150,7 +161,7 @@ public:
    {
       int ticket = DecisionTicket(trail);
       if(ticket < 0) return "NO TRAILING TRIGGER";
-      return "REFERENCE MOVE >= StepTrallOrders";
+      return "DIRECTIONAL MOVE >= StepTrallOrders";
    }
 };
 
