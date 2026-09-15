@@ -2,13 +2,15 @@
 #define __ZGOLD_EXECUTION_ENGINE_MQH__
 
 #include "../Config/ZGoldParams.mqh"
+#include "../Engine/LotEngine.mqh"
 #include "ExitDecisionObserver.mqh"
 #include "CloseByObserver.mqh"
 #include "PendingTrailingExecutionObserver.mqh"
 #include "PendingExecutionObserver.mqh"
 
-// Stage 97: execution adapter for Strategy Tester / controlled forward test.
-// Observer layer remains the source of decisions; execution is isolated here.
+// Controlled execution adapter. The observer layer remains the source of
+// reconstructed decisions; this class only translates approved decisions into
+// MT4 trade operations.
 #define ZGOLD_EXEC_DISABLED 0
 #define ZGOLD_EXEC_TEST 1
 
@@ -16,6 +18,7 @@ class ExecutionEngine
 {
 private:
  bool m_enabled; int m_magic; int m_slippage; int m_execution_mode; string m_last_action; string m_last_error;
+
 public:
  ExecutionEngine(){m_enabled=false;m_magic=1001;m_slippage=20;m_execution_mode=ZGOLD_EXEC_TEST;ResetStatus();}
  void Configure(int magic,bool enabled,int execution_mode,int slippage){m_magic=magic;m_enabled=enabled;m_execution_mode=execution_mode;m_slippage=MathMax(0,slippage);}
@@ -66,12 +69,45 @@ public:
  {
   if(!Enabled()||exec.Status()!=ZGOLD_EXEC_EXECUTED)return false;
   ResetStatus();
-  // Conservative reconstruction: restore the opposing stop using the proven
-  // 3.40 family from the execution price. The exact 0.80 secondary rule is
-  // intentionally not invented here and remains an unresolved hypothesis.
-  if(exec.Type()==OP_BUYSTOP){double sell_price=NormalizePending(OP_SELLSTOP,exec.Price()-ZGoldParams::MinDistance());if(!HasPendingType(OP_SELLSTOP))return SendPending(OP_SELLSTOP,exec.Lots(),sell_price,"ZGOLD_EXP_SELL");}
-  else if(exec.Type()==OP_SELLSTOP){double buy_price=NormalizePending(OP_BUYSTOP,exec.Price()+ZGoldParams::MinDistance());if(!HasPendingType(OP_BUYSTOP))return SendPending(OP_BUYSTOP,exec.Lots(),buy_price,"ZGOLD_EXP_BUY");}
-  return false;
+
+  // Proven execution lifecycle: an execution does not automatically create a
+  // second pending order while another pending order is still alive. The next
+  // pending is created when the execution leaves the structure with no
+  // pending orders. This avoids duplicating the bilateral structure.
+  if(PendingCount()>0)return false;
+
+  // The observed primary post-execution expansion uses the MinDistance
+  // family. The 0.80/0.90 secondary-layer discriminator remains unresolved
+  // and is deliberately NOT invented here.
+  int pending_type=-1;
+  double requested=0.0;
+  int level=0;
+
+  if(exec.Type()==OP_BUY || exec.Type()==OP_BUYSTOP)
+  {
+    pending_type=OP_SELLSTOP;
+    requested=exec.Price()-ZGoldParams::MinDistance();
+    level=SellPositionCount();
+  }
+  else if(exec.Type()==OP_SELL || exec.Type()==OP_SELLSTOP)
+  {
+    pending_type=OP_BUYSTOP;
+    requested=exec.Price()+ZGoldParams::MinDistance();
+    level=BuyPositionCount();
+  }
+  else
+  {
+    m_last_error="UNSUPPORTED_EXECUTION_TYPE";
+    return false;
+  }
+
+  LotEngine lots;
+  lots.Configure(ZGoldParams::Lot(),ZGoldParams::KLot(),ZGoldParams::PlusLot(),ZGoldParams::DigitsLot(),ZGoldParams::MaxLot());
+  double next_lot=lots.LotForLevel(level);
+
+  double price=NormalizePending(pending_type,requested);
+  string comment=(pending_type==OP_BUYSTOP?"ZGOLD_EXP_BUY":"ZGOLD_EXP_SELL");
+  return SendPending(pending_type,next_lot,price,comment);
  }
 
  bool CleanupAndReset(double bid,double ask)
@@ -85,6 +121,8 @@ public:
 private:
  int CurrentPositionCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_BUY||OrderType()==OP_SELL)n++;}return n;}
  int PendingCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;int t=OrderType();if(t==OP_BUYSTOP||t==OP_SELLSTOP||t==OP_BUYLIMIT||t==OP_SELLLIMIT)n++;}return n;}
+ int BuyPositionCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_BUY)n++;}return n;}
+ int SellPositionCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_SELL)n++;}return n;}
  bool HasPendingType(int type){for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()==Symbol()&&OrderMagicNumber()==m_magic&&OrderType()==type)return true;}return false;}
  bool HasMarketOrPending(int type){for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==type)return true;}return false;}
  double NormalizePending(int type,double requested){double stop_level=MarketInfo(Symbol(),MODE_STOPLEVEL)*Point;double min_dist=MathMax(stop_level,Point);if(type==OP_BUYSTOP&&requested<=Ask+min_dist)requested=Ask+min_dist;if(type==OP_SELLSTOP&&requested>=Bid-min_dist)requested=Bid-min_dist;return NormalizeDouble(requested,Digits);}
