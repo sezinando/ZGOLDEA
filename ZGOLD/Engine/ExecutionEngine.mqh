@@ -8,9 +8,6 @@
 #include "PendingTrailingExecutionObserver.mqh"
 #include "PendingExecutionObserver.mqh"
 
-// Controlled execution adapter. The observer layer remains the source of
-// reconstructed decisions; this class only translates approved decisions into
-// MT4 trade operations.
 #define ZGOLD_EXEC_DISABLED 0
 #define ZGOLD_EXEC_TEST 1
 
@@ -18,9 +15,24 @@ class ExecutionEngine
 {
 private:
  bool m_enabled; int m_magic; int m_slippage; int m_execution_mode; string m_last_action; string m_last_error;
+ int m_buy_level; int m_sell_level;
+
+ void ResetLotState(){m_buy_level=0;m_sell_level=0;}
+ double LotForType(int type)
+ {
+  LotEngine lots;
+  lots.Configure(ZGoldParams::Lot(),ZGoldParams::KLot(),ZGoldParams::PlusLot(),ZGoldParams::DigitsLot(),ZGoldParams::MaxLot());
+  if(type==OP_BUYSTOP) return lots.LotForLevel(m_buy_level);
+  return lots.LotForLevel(m_sell_level);
+ }
+ void AdvanceLotState(int type)
+ {
+  if(type==OP_BUYSTOP)m_buy_level++;
+  if(type==OP_SELLSTOP)m_sell_level++;
+ }
 
 public:
- ExecutionEngine(){m_enabled=false;m_magic=1001;m_slippage=20;m_execution_mode=ZGOLD_EXEC_TEST;ResetStatus();}
+ ExecutionEngine(){m_enabled=false;m_magic=1001;m_slippage=20;m_execution_mode=ZGOLD_EXEC_TEST;m_buy_level=0;m_sell_level=0;ResetStatus();}
  void Configure(int magic,bool enabled,int execution_mode,int slippage){m_magic=magic;m_enabled=enabled;m_execution_mode=execution_mode;m_slippage=MathMax(0,slippage);}
  void ResetStatus(){m_last_action="NONE";m_last_error="";}
  bool Enabled()const{return m_enabled&&m_execution_mode!=ZGOLD_EXEC_DISABLED;}
@@ -35,8 +47,10 @@ public:
   if(ZGoldParams::MaxSpreadPoints()>0&&MarketInfo(Symbol(),MODE_SPREAD)>ZGoldParams::MaxSpreadPoints()){m_last_error="SPREAD_LIMIT";return false;}
   double buy_price=NormalizePending(OP_BUYSTOP,ask+ZGoldParams::FirstStep());
   double sell_price=NormalizePending(OP_SELLSTOP,bid-ZGoldParams::FirstStep());
-  bool b=SendPending(OP_BUYSTOP,ZGoldParams::Lot(),buy_price,"ZGOLD_INIT_BUY");
-  bool s=SendPending(OP_SELLSTOP,ZGoldParams::Lot(),sell_price,"ZGOLD_INIT_SELL");
+  bool b=SendPending(OP_BUYSTOP,LotForType(OP_BUYSTOP),buy_price,"ZGOLD_INIT_BUY");
+  bool s=SendPending(OP_SELLSTOP,LotForType(OP_SELLSTOP),sell_price,"ZGOLD_INIT_SELL");
+  if(b)m_buy_level=1;
+  if(s)m_sell_level=1;
   return b&&s;
  }
 
@@ -69,52 +83,53 @@ public:
  {
   if(!Enabled()||exec.Status()!=ZGOLD_EXEC_EXECUTED)return false;
   ResetStatus();
-
-  // Proven execution lifecycle: an execution does not automatically create a
-  // second pending order while another pending order is still alive. The next
-  // pending is created when the execution leaves the structure with no
-  // pending orders. This avoids duplicating the bilateral structure.
   if(PendingCount()>0)return false;
 
-  // The observed primary post-execution expansion uses the MinDistance
-  // family. The 0.80/0.90 secondary-layer discriminator remains unresolved
-  // and is deliberately NOT invented here.
-  int pending_type=-1;
-  double requested=0.0;
-  int level=0;
+  int pending_type=-1; double requested=0.0;
+  if(exec.Type()==OP_BUY || exec.Type()==OP_BUYSTOP){pending_type=OP_SELLSTOP;requested=exec.Price()-ZGoldParams::MinDistance();}
+  else if(exec.Type()==OP_SELL || exec.Type()==OP_SELLSTOP){pending_type=OP_BUYSTOP;requested=exec.Price()+ZGoldParams::MinDistance();}
+  else {m_last_error="UNSUPPORTED_EXECUTION_TYPE";return false;}
 
-  if(exec.Type()==OP_BUY || exec.Type()==OP_BUYSTOP)
-  {
-    pending_type=OP_SELLSTOP;
-    requested=exec.Price()-ZGoldParams::MinDistance();
-    level=SellPositionCount();
-  }
-  else if(exec.Type()==OP_SELL || exec.Type()==OP_SELLSTOP)
-  {
-    pending_type=OP_BUYSTOP;
-    requested=exec.Price()+ZGoldParams::MinDistance();
-    level=BuyPositionCount();
-  }
-  else
-  {
-    m_last_error="UNSUPPORTED_EXECUTION_TYPE";
-    return false;
-  }
-
-  LotEngine lots;
-  lots.Configure(ZGoldParams::Lot(),ZGoldParams::KLot(),ZGoldParams::PlusLot(),ZGoldParams::DigitsLot(),ZGoldParams::MaxLot());
-  double next_lot=lots.LotForLevel(level);
-
+  double next_lot=LotForType(pending_type);
   double price=NormalizePending(pending_type,requested);
   string comment=(pending_type==OP_BUYSTOP?"ZGOLD_EXP_BUY":"ZGOLD_EXP_SELL");
-  return SendPending(pending_type,next_lot,price,comment);
+  bool ok=SendPending(pending_type,next_lot,price,comment);
+  if(ok)AdvanceLotState(pending_type);
+  return ok;
+ }
+
+ bool ExecuteBasket(int direction)
+ {
+  bool changed=false;
+  for(int i=OrdersTotal()-1;i>=0;i--)
+  {
+   if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;
+   if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;
+   if(OrderType()==direction)if(CloseTicket(OrderTicket()))changed=true;
+  }
+  // Proven directional reset: after a basket close the next order in that
+  // direction returns to base lot. The exact post-close geometry is kept
+  // conservative and uses the proven MinDistance family.
+  if(changed)
+  {
+   if(direction==OP_BUY)m_buy_level=0;
+   if(direction==OP_SELL)m_sell_level=0;
+   int pending_type=(direction==OP_BUY?OP_BUYSTOP:OP_SELLSTOP);
+   if(!HasPendingType(pending_type))
+   {
+    double requested=(pending_type==OP_BUYSTOP?Ask+ZGoldParams::MinDistance():Bid-ZGoldParams::MinDistance());
+    double price=NormalizePending(pending_type,requested);
+    if(SendPending(pending_type,LotForType(pending_type),price,"ZGOLD_BASKET_RESET"))AdvanceLotState(pending_type);
+   }
+  }
+  return changed;
  }
 
  bool CleanupAndReset(double bid,double ask)
  {
   if(!Enabled())return false; bool changed=false;
   for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;int t=OrderType();if(t==OP_BUYSTOP||t==OP_SELLSTOP||t==OP_BUYLIMIT||t==OP_SELLLIMIT)if(OrderDelete(OrderTicket()))changed=true;}
-  if(CurrentPositionCount()==0&&PendingCount()==0)if(EnsureInitialStructure(bid,ask))changed=true;
+  if(CurrentPositionCount()==0&&PendingCount()==0){ResetLotState();if(EnsureInitialStructure(bid,ask))changed=true;}
   return changed;
  }
 
@@ -129,7 +144,6 @@ private:
  double NormalizeOrderLots(double lots){double minlot=MarketInfo(Symbol(),MODE_MINLOT);double maxlot=MarketInfo(Symbol(),MODE_MAXLOT);double step=MarketInfo(Symbol(),MODE_LOTSTEP);lots=MathMax(minlot,MathMin(maxlot,lots));if(step>0)lots=MathFloor(lots/step+0.0000001)*step;return NormalizeDouble(lots,ZGoldParams::DigitsLot());}
  bool SendPending(int type,double lots,double price,string comment){lots=NormalizeOrderLots(lots);ResetLastError();int ticket=OrderSend(Symbol(),type,lots,price,m_slippage,0,0,comment,m_magic,0,clrNONE);if(ticket<0){m_last_error="OrderSend error "+IntegerToString(GetLastError());return false;}m_last_action="SEND #"+IntegerToString(ticket)+" "+comment+" @ "+DoubleToString(price,Digits);return true;}
  bool CloseTicket(int ticket){if(ticket<0||!OrderSelect(ticket,SELECT_BY_TICKET))return false;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)return false;int type=OrderType();if(type!=OP_BUY&&type!=OP_SELL)return false;double close_price=(type==OP_BUY?Bid:Ask);ResetLastError();if(!OrderClose(ticket,OrderLots(),close_price,m_slippage,clrNONE)){m_last_error="OrderClose error "+IntegerToString(GetLastError());return false;}m_last_action="CLOSE #"+IntegerToString(ticket);return true;}
- bool ExecuteBasket(int direction){bool changed=false;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==direction)if(CloseTicket(OrderTicket()))changed=true;}return changed;}
  bool ExecuteCompression(ExitDecisionObserver &decision){bool changed=false;int winner=decision.Ticket(),first_loss=decision.Ticket2(),second_loss=-1;if(winner>=0&&OrderSelect(winner,SELECT_BY_TICKET)){int type=OrderType();double worst=1.0e100;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic||OrderType()!=type)continue;int t=OrderTicket();if(t==winner||t==first_loss)continue;double p=OrderProfit()+OrderSwap()+OrderCommission();if(p<worst){worst=p;second_loss=t;}}}if(CloseTicket(winner))changed=true;if(CloseTicket(first_loss))changed=true;if(CloseTicket(second_loss))changed=true;return changed;}
  bool ExecuteCloseBy(CloseByObserver &closeby){int buy=closeby.BuyTicket(),sell=closeby.SellTicket();if(buy<0||sell<0)return false;if(!OrderSelect(buy,SELECT_BY_TICKET))return false;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)return false;if(!OrderSelect(sell,SELECT_BY_TICKET))return false;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)return false;ResetLastError();if(!OrderCloseBy(buy,sell,clrNONE)){m_last_error="OrderCloseBy error "+IntegerToString(GetLastError());return false;}m_last_action="CLOSEBY #"+IntegerToString(buy)+"/#"+IntegerToString(sell);return true;}
  bool ExecuteGlobal(CloseByObserver &closeby){if(closeby.Status()==ZGOLD_CLOSEBY_PAIR||closeby.Status()==ZGOLD_CLOSEBY_RESIDUAL)return ExecuteCloseBy(closeby);if(closeby.Status()==ZGOLD_CLOSEBY_END){bool changed=false;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_BUY||OrderType()==OP_SELL)if(CloseTicket(OrderTicket()))changed=true;}if(changed)return true;return CleanupAndReset(Bid,Ask);}return false;}
