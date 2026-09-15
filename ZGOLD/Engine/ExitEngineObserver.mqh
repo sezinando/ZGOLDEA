@@ -25,7 +25,9 @@ private:
        n++; profit+=OrderProfit()+OrderSwap()+OrderCommission();
     }
     target=n*ZGoldParams::StopProfit();
-    trig=(n>0&&profit>=target);
+    // A one-position basket was observed as a normal open position, not as
+    // the directional basket-close event. Require at least two positions.
+    trig=(n>=2&&profit>=target);
  }
  void EvalComp(int d,int magic,double side,double opp,bool &trig,int &winT,int &l1T,int &l2T,double &winP,double &result)
  {
@@ -51,8 +53,6 @@ private:
     if(a<0||b<0)return;
     double do32=pf[w]+pf[a]+pf[b];
     double winnerLots=OrderLotsByTicket(tk[w],magic);
-    // winner > 0 is intentionally NOT a separate eligibility gate.
-    // Under the formal do32 model it is redundant; kept only as an invariant comment.
     if(winnerLots>0 && side>opp+ZGoldParams::CompressionLotMultiplier()*winnerLots && do32>0)
     {trig=true;winT=tk[w];l1T=tk[a];l2T=tk[b];winP=pf[w];result=do32;}
  }
@@ -60,7 +60,13 @@ private:
 public:
  ExitEngineObserver(){Reset();}
  void Reset(){m_buy_basket=m_sell_basket=m_buy_compression=m_sell_compression=m_global_triggered=m_capacity_warning=false;m_buy_profit=m_sell_profit=m_buy_target=m_sell_target=m_total_profit=0;m_buy_winner=m_buy_loss1=m_buy_loss2=m_sell_winner=m_sell_loss1=m_sell_loss2=-1;m_buy_result=m_sell_result=m_buy_winner_profit=m_sell_winner_profit=0;}
- void Evaluate(ExposureState &e,int magic){Reset();m_total_profit=e.TotalProfit();m_global_triggered=(m_total_profit>=ZGoldParams::CloseAllThreshold());EvalBasket(OP_BUY,magic,m_buy_basket,m_buy_profit,m_buy_target);EvalBasket(OP_SELL,magic,m_sell_basket,m_sell_profit,m_sell_target);EvalComp(OP_BUY,magic,e.BuyLots(),e.SellLots(),m_buy_compression,m_buy_winner,m_buy_loss1,m_buy_loss2,m_buy_winner_profit,m_buy_result);EvalComp(OP_SELL,magic,e.SellLots(),e.BuyLots(),m_sell_compression,m_sell_winner,m_sell_loss1,m_sell_loss2,m_sell_winner_profit,m_sell_result);}
+ void Evaluate(ExposureState &e,int magic){Reset();m_total_profit=e.TotalProfit();
+    // The observed Global/CloseBy cycle requires a bilateral live exposure.
+    // A lone profitable position is handled by its directional basket logic.
+    m_global_triggered=(e.BuyCount()>0&&e.SellCount()>0&&m_total_profit>=ZGoldParams::CloseAllThreshold());
+    EvalBasket(OP_BUY,magic,m_buy_basket,m_buy_profit,m_buy_target);EvalBasket(OP_SELL,magic,m_sell_basket,m_sell_profit,m_sell_target);
+    EvalComp(OP_BUY,magic,e.BuyLots(),e.SellLots(),m_buy_compression,m_buy_winner,m_buy_loss1,m_buy_loss2,m_buy_winner_profit,m_buy_result);
+    EvalComp(OP_SELL,magic,e.SellLots(),e.BuyLots(),m_sell_compression,m_sell_winner,m_sell_loss1,m_sell_loss2,m_sell_winner_profit,m_sell_result);}
  bool BuyBasketEligible()const{return m_buy_basket;} bool SellBasketEligible()const{return m_sell_basket;} bool BuyCompressionEligible()const{return m_buy_compression;} bool SellCompressionEligible()const{return m_sell_compression;} bool GlobalTriggered()const{return m_global_triggered;} bool CapacityWarning()const{return m_capacity_warning;}
  int ExitGateCount()const{return (m_buy_basket?1:0)+(m_sell_basket?1:0)+(m_buy_compression?1:0)+(m_sell_compression?1:0)+(m_global_triggered?1:0);}
  bool MultipleExitGatesEligible()const{return ExitGateCount()>1;}
