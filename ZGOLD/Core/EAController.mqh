@@ -8,7 +8,7 @@ class EAController
 {
 private:
  MarketState m_market; StateReconciler m_reconciler; DebugPanel m_panel; PendingTrailingObserver m_trailing; bool m_initialized; int m_magic;
- void UpdateTrailingObserver(PendingState &p){m_trailing.Reset();if(p.Count()>0)m_trailing.Evaluate(p.Ticket(0),p.Type(0),p.Price(0),m_market.Bid(),m_market.Ask());m_panel.SetTrailing(m_trailing);}
+ void UpdateTrailingObserver(PendingState &p){m_trailing.Reset();if(p.Count()>0)m_trailing.Evaluate(p.Ticket(0),p.Type(0),p.Price(0),m_market.Bid(),m_market.Ask());m_panel.SetTrailing(m_trailing.Ticket(),m_trailing.Type(),m_trailing.OOP(),m_trailing.MarketReference(),m_trailing.Candidate(),m_trailing.Delta(),m_trailing.DistanceClass(),m_trailing.Valid(),m_trailing.Reason());}
  void UpdatePanel(){ExposureState e;PendingState p;m_reconciler.CopyExposureTo(e);m_reconciler.CopyPendingTo(p);m_panel.SetMarket(m_market.Bid(),m_market.Ask(),m_market.SpreadPoints(),m_market.ServerTime());m_panel.SetExposure(e.BuyCount(),e.BuyLots(),e.BuyProfit(),e.SellCount(),e.SellLots(),e.SellProfit(),e.TotalProfit());m_panel.SetPending(p);m_panel.SetLifecycle(m_reconciler.LifecycleEvent(),m_reconciler.LifecycleTicket(),m_reconciler.LifecyclePreviousType(),m_reconciler.LifecycleType(),m_reconciler.LifecyclePreviousLots(),m_reconciler.LifecycleLots(),m_reconciler.LifecyclePreviousPrice(),m_reconciler.LifecyclePrice(),m_reconciler.LifecycleText());UpdateTrailingObserver(p);}
 public:
  EAController(){m_initialized=false;m_magic=1001;}
