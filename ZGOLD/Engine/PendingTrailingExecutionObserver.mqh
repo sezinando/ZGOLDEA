@@ -3,6 +3,7 @@
 
 #include "PendingTrailingObserver.mqh"
 #include "PendingTrailingDecisionObserver.mqh"
+#include "../Config/ZGoldParams.mqh"
 
 #define ZGOLD_TRAIL_EXEC_NONE       0
 #define ZGOLD_TRAIL_EXEC_MODIFY     1
@@ -73,29 +74,32 @@ public:
       m_distance=trail.Delta(index);
       m_distance_class=trail.DistanceClass(index);
 
-      if(m_type==OP_BUYSTOP && m_distance_class=="FIRSTSTEP 1.60")
+      double first_step=ZGoldParams::FirstStep();
+      double min_distance=ZGoldParams::MinDistance();
+
+      if(m_type==OP_BUYSTOP && m_distance_class==ZGOLD_TRAIL_FAMILY_FIRSTSTEP)
       {
-         m_candidate_price=NormalizeDouble(ask+1.60,Digits);
+         m_candidate_price=NormalizeDouble(ask+first_step,Digits);
          m_status=ZGOLD_TRAIL_EXEC_MODIFY;
-         m_reason="BUY STOP -> ASK + 1.60";
+         m_reason="BUY STOP -> ASK + FirstStep";
       }
-      else if(m_type==OP_BUYSTOP && m_distance_class=="MINDISTANCE 3.40")
+      else if(m_type==OP_BUYSTOP && m_distance_class==ZGOLD_TRAIL_FAMILY_MINDISTANCE)
       {
-         m_candidate_price=NormalizeDouble(ask+3.40,Digits);
+         m_candidate_price=NormalizeDouble(ask+min_distance,Digits);
          m_status=ZGOLD_TRAIL_EXEC_MODIFY;
-         m_reason="BUY STOP -> ASK + 3.40";
+         m_reason="BUY STOP -> ASK + MinDistance";
       }
-      else if(m_type==OP_SELLSTOP && m_distance_class=="FIRSTSTEP 1.60")
+      else if(m_type==OP_SELLSTOP && m_distance_class==ZGOLD_TRAIL_FAMILY_FIRSTSTEP)
       {
-         m_candidate_price=NormalizeDouble(bid-1.60,Digits);
+         m_candidate_price=NormalizeDouble(bid-first_step,Digits);
          m_status=ZGOLD_TRAIL_EXEC_MODIFY;
-         m_reason="SELL STOP -> BID - 1.60";
+         m_reason="SELL STOP -> BID - FirstStep";
       }
-      else if(m_type==OP_SELLSTOP && m_distance_class=="MINDISTANCE 3.40")
+      else if(m_type==OP_SELLSTOP && m_distance_class==ZGOLD_TRAIL_FAMILY_MINDISTANCE)
       {
-         m_candidate_price=NormalizeDouble(bid-3.40,Digits);
+         m_candidate_price=NormalizeDouble(bid-min_distance,Digits);
          m_status=ZGOLD_TRAIL_EXEC_MODIFY;
-         m_reason="SELL STOP -> BID - 3.40";
+         m_reason="SELL STOP -> BID - MinDistance";
       }
       else
       {
