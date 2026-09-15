@@ -2,6 +2,7 @@
 #define __ZGOLD_PENDING_TRAILING_DECISION_OBSERVER_MQH__
 
 #include "PendingTrailingObserver.mqh"
+#include "../Config/ZGoldParams.mqh"
 
 #define ZGOLD_DECISION_NONE       0
 #define ZGOLD_DECISION_HOLD       1
@@ -85,14 +86,15 @@ public:
          m_reference_baseline[k] = old_baseline[old_index];
          m_reference_move[k] = MathAbs(current_ref - m_reference_baseline[k]);
 
-         if(m_reference_move[k] >= 0.50 - Point * 0.1 &&
+         double trigger_distance=ZGoldParams::StepTrallOrders();
+         if(m_reference_move[k] >= trigger_distance - Point * 0.1 &&
             trail.Ticket(k) == ticket &&
             trail.Valid(k) &&
             trail.DistanceClass(k) != "UNRESOLVED")
          {
             m_triggered[k] = true;
-            // Re-arm from the new reference. This models the baseline that
-            // would exist after the corresponding pending-price adjustment.
+            // Re-arm from the new reference after the corresponding pending
+            // price adjustment. The trigger distance is runtime-configured.
             m_reference_baseline[k] = current_ref;
          }
       }
@@ -148,7 +150,7 @@ public:
    {
       int ticket = DecisionTicket(trail);
       if(ticket < 0) return "NO TRAILING TRIGGER";
-      return "REFERENCE MOVE >= 0.50";
+      return "REFERENCE MOVE >= StepTrallOrders";
    }
 };
 
