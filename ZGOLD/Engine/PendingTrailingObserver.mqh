@@ -22,95 +22,145 @@ private:
    bool   m_valid[ZGOLD_TRAIL_MAX];
    string m_reason[ZGOLD_TRAIL_MAX];
 
+   int FindCurrent(int ticket) const
+   {
+      for(int i=0;i<m_count;i++)
+         if(m_ticket[i]==ticket) return i;
+      return -1;
+   }
+
    string TypeName(int type) const
    {
-      if(type == OP_BUYSTOP) return "BUY STOP";
-      if(type == OP_SELLSTOP) return "SELL STOP";
+      if(type==OP_BUYSTOP) return "BUY STOP";
+      if(type==OP_SELLSTOP) return "SELL STOP";
       return "UNKNOWN";
    }
 
-   void EvaluateOne(int index,int ticket,int type,double oop,double bid,double ask)
+   string InferDistanceFamily(double delta) const
    {
-      m_ticket[index] = ticket;
-      m_type[index] = type;
-      m_oop[index] = oop;
-      m_market_ref[index] = 0.0;
-      m_candidate[index] = 0.0;
-      m_delta[index] = 0.0;
-      m_distance_class[index] = "UNRESOLVED";
-      m_valid[index] = false;
-      m_reason[index] = "UNRESOLVED TYPE";
+      if(MathAbs(delta-1.60)<=Point*2.0) return "FIRSTSTEP 1.60";
+      if(MathAbs(delta-3.40)<=Point*2.0) return "MINDISTANCE 3.40";
+      return "UNRESOLVED";
+   }
 
-      if(type == OP_BUYSTOP)
+   void EvaluateOne(int index,int ticket,int type,double oop,double bid,double ask,string prior_family)
+   {
+      m_ticket[index]=ticket;
+      m_type[index]=type;
+      m_oop[index]=oop;
+      m_market_ref[index]=(type==OP_BUYSTOP?ask:bid);
+      m_candidate[index]=m_market_ref[index];
+      m_delta[index]=0.0;
+      m_distance_class[index]=prior_family;
+      m_valid=false;
+      m_reason="UNRESOLVED TYPE";
+
+      if(type==OP_BUYSTOP)
       {
-         m_market_ref[index] = ask;
-         m_delta[index] = oop - ask;
-         m_candidate[index] = ask;
-         if(MathAbs(m_delta[index] - 1.60) <= Point * 2.0)
-            m_distance_class[index] = "FIRSTSTEP 1.60";
-         else if(MathAbs(m_delta[index] - 3.40) <= Point * 2.0)
-            m_distance_class[index] = "MINDISTANCE 3.40";
-         m_valid[index] = (m_delta[index] >= 0.0);
-         m_reason[index] = "BUY STOP reference = ASK";
+         m_delta[index]=oop-ask;
+         m_valid=(m_delta[index]>=0.0);
+         m_reason="BUY STOP reference = ASK";
       }
-      else if(type == OP_SELLSTOP)
+      else if(type==OP_SELLSTOP)
       {
-         m_market_ref[index] = bid;
-         m_delta[index] = bid - oop;
-         m_candidate[index] = bid;
-         if(MathAbs(m_delta[index] - 1.60) <= Point * 2.0)
-            m_distance_class[index] = "FIRSTSTEP 1.60";
-         else if(MathAbs(m_delta[index] - 3.40) <= Point * 2.0)
-            m_distance_class[index] = "MINDISTANCE 3.40";
-         m_valid[index] = (m_delta[index] >= 0.0);
-         m_reason[index] = "SELL STOP reference = BID";
+         m_delta[index]=bid-oop;
+         m_valid=(m_delta[index]>=0.0);
+         m_reason="SELL STOP reference = BID";
       }
+      else
+      {
+         m_valid=false;
+         m_distance_class="UNRESOLVED";
+         return;
+      }
+
+      if(m_distance_class[index]=="UNRESOLVED")
+         m_distance_class[index]=InferDistanceFamily(m_delta[index]);
+
+      // A live pending order naturally drifts away from 1.60/3.40 between
+      // modifications. The distance family is therefore stateful per ticket,
+      // rather than re-derived from every market snapshot.
+      if(m_distance_class[index]!="UNRESOLVED")
+         m_reason=m_reason+" | FAMILY="+m_distance_class[index];
+      else
+         m_reason=m_reason+" | FAMILY UNRESOLVED";
    }
 
 public:
-   PendingTrailingObserver() { Reset(); }
+   PendingTrailingObserver(){Reset();}
 
    void Reset()
    {
-      m_count = 0;
-      for(int i = 0; i < ZGOLD_TRAIL_MAX; i++)
+      m_count=0;
+      for(int i=0;i<ZGOLD_TRAIL_MAX;i++)
       {
-         m_ticket[i] = -1;
-         m_type[i] = -1;
-         m_oop[i] = 0.0;
-         m_market_ref[i] = 0.0;
-         m_candidate[i] = 0.0;
-         m_delta[i] = 0.0;
-         m_distance_class[i] = "UNRESOLVED";
-         m_valid[i] = false;
-         m_reason[i] = "NO PENDING";
+         m_ticket[i]=-1;
+         m_type[i]=-1;
+         m_oop[i]=0.0;
+         m_market_ref[i]=0.0;
+         m_candidate[i]=0.0;
+         m_delta[i]=0.0;
+         m_distance_class[i]="UNRESOLVED";
+         m_valid[i]=false;
+         m_reason[i]="NO PENDING";
       }
    }
 
    void EvaluateAll(PendingState &p,double bid,double ask)
    {
-      Reset();
-      int total = p.Count();
-      if(total > ZGOLD_TRAIL_MAX)
-         total = ZGOLD_TRAIL_MAX;
+      int old_count=m_count;
+      int old_ticket[ZGOLD_TRAIL_MAX];
+      string old_family[ZGOLD_TRAIL_MAX];
 
-      for(int i = 0; i < total; i++)
-         EvaluateOne(i,p.Ticket(i),p.Type(i),p.Price(i),bid,ask);
+      for(int i=0;i<ZGOLD_TRAIL_MAX;i++)
+      {
+         old_ticket[i]=m_ticket[i];
+         old_family[i]=m_distance_class[i];
+      }
 
-      m_count = total;
+      int total=p.Count();
+      if(total>ZGOLD_TRAIL_MAX) total=ZGOLD_TRAIL_MAX;
+
+      m_count=total;
+      for(int i=0;i<ZGOLD_TRAIL_MAX;i++)
+      {
+         m_ticket[i]=-1;
+         m_type[i]=-1;
+         m_oop[i]=0.0;
+         m_market_ref[i]=0.0;
+         m_candidate[i]=0.0;
+         m_delta[i]=0.0;
+         m_distance_class[i]="UNRESOLVED";
+         m_valid[i]=false;
+         m_reason[i]="NO PENDING";
+      }
+
+      for(int i=0;i<total;i++)
+      {
+         int ticket=p.Ticket(i);
+         string family="UNRESOLVED";
+         for(int j=0;j<old_count;j++)
+            if(old_ticket[j]==ticket)
+            {
+               family=old_family[j];
+               break;
+            }
+
+         EvaluateOne(i,ticket,p.Type(i),p.Price(i),bid,ask,family);
+      }
    }
 
-   int Count() const { return m_count; }
-   int Ticket(int index) const { if(index < 0 || index >= m_count) return -1; return m_ticket[index]; }
-   int Type(int index) const { if(index < 0 || index >= m_count) return -1; return m_type[index]; }
-   double OOP(int index) const { if(index < 0 || index >= m_count) return 0.0; return m_oop[index]; }
-   double MarketReference(int index) const { if(index < 0 || index >= m_count) return 0.0; return m_market_ref[index]; }
-   double Candidate(int index) const { if(index < 0 || index >= m_count) return 0.0; return m_candidate[index]; }
-   double Delta(int index) const { if(index < 0 || index >= m_count) return 0.0; return m_delta[index]; }
-   string DistanceClass(int index) const { if(index < 0 || index >= m_count) return "-"; return m_distance_class[index]; }
-   bool Valid(int index) const { if(index < 0 || index >= m_count) return false; return m_valid[index]; }
-   string Reason(int index) const { if(index < 0 || index >= m_count) return "-"; return m_reason[index]; }
-   string TypeText(int index) const { return TypeName(Type(index)); }
+   int Count() const{return m_count;}
+   int Ticket(int index) const{if(index<0||index>=m_count)return -1;return m_ticket[index];}
+   int Type(int index) const{if(index<0||index>=m_count)return -1;return m_type[index];}
+   double OOP(int index) const{if(index<0||index>=m_count)return 0.0;return m_oop[index];}
+   double MarketReference(int index) const{if(index<0||index>=m_count)return 0.0;return m_market_ref[index];}
+   double Candidate(int index) const{if(index<0||index>=m_count)return 0.0;return m_candidate[index];}
+   double Delta(int index) const{if(index<0||index>=m_count)return 0.0;return m_delta[index];}
+   string DistanceClass(int index) const{if(index<0||index>=m_count)return "-";return m_distance_class[index];}
+   bool Valid(int index) const{if(index<0||index>=m_count)return false;return m_valid[index];}
+   string Reason(int index) const{if(index<0||index>=m_count)return "-";return m_reason[index];}
+   string TypeText(int index) const{return TypeName(Type(index));}
 };
 
 #endif
