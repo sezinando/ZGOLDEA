@@ -2,11 +2,17 @@
 #define __ZGOLD_PENDING_TRAILING_OBSERVER_MQH__
 
 #include "../State/PendingState.mqh"
+#include "../Config/ZGoldParams.mqh"
 
 #define ZGOLD_TRAIL_NONE 0
 #define ZGOLD_TRAIL_BUY  1
 #define ZGOLD_TRAIL_SELL 2
 #define ZGOLD_TRAIL_MAX  6
+
+// Canonical distance-family identifiers. Numeric distances are resolved from
+// ZGoldParams; formatting must never be part of the decision contract.
+#define ZGOLD_TRAIL_FAMILY_FIRSTSTEP   "FIRSTSTEP"
+#define ZGOLD_TRAIL_FAMILY_MINDISTANCE "MINDISTANCE"
 
 class PendingTrailingObserver
 {
@@ -31,10 +37,12 @@ private:
 
    string InferDistanceFamily(double delta) const
    {
-      double first_step=160.0*Point;
-      double min_distance=340.0*Point;
-      if(MathAbs(delta-first_step)<=Point*2.0) return "FIRSTSTEP 160";
-      if(MathAbs(delta-min_distance)<=Point*2.0) return "MINDISTANCE 340";
+      double first_step=ZGoldParams::FirstStep();
+      double min_distance=ZGoldParams::MinDistance();
+      double tolerance=Point*2.0;
+
+      if(MathAbs(delta-first_step)<=tolerance) return ZGOLD_TRAIL_FAMILY_FIRSTSTEP;
+      if(MathAbs(delta-min_distance)<=tolerance) return ZGOLD_TRAIL_FAMILY_MINDISTANCE;
       return "UNRESOLVED";
    }
 
@@ -73,7 +81,7 @@ private:
       if(m_distance_class[index]=="UNRESOLVED")
          m_distance_class[index]=InferDistanceFamily(m_delta[index]);
 
-      if(m_distance_class[index]!="UNRESOLVED")
+      if(m_distance_class[index]!= "UNRESOLVED")
          m_reason[index]=m_reason[index]+" | FAMILY="+m_distance_class[index];
       else
          m_reason[index]=m_reason[index]+" | FAMILY UNRESOLVED";
