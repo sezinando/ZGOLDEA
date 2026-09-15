@@ -16,6 +16,8 @@ class ExecutionEngine
 private:
  bool m_enabled; int m_magic; int m_slippage; int m_execution_mode; string m_last_action; string m_last_error;
  int m_buy_level; int m_sell_level;
+ double m_last_buy_exec; double m_last_sell_exec;
+ bool m_have_last_buy_exec; bool m_have_last_sell_exec;
 
  void ResetLotState(){m_buy_level=0;m_sell_level=0;}
  double LotForType(int type)
@@ -30,9 +32,15 @@ private:
   if(type==OP_BUYSTOP)m_buy_level++;
   if(type==OP_SELLSTOP)m_sell_level++;
  }
+ void ResetExecutionAnchors(){m_have_last_buy_exec=false;m_have_last_sell_exec=false;m_last_buy_exec=0;m_last_sell_exec=0;}
+ void RecordExecution(PendingExecutionObserver &exec)
+ {
+  if(exec.Type()==OP_BUY){m_last_buy_exec=exec.Price();m_have_last_buy_exec=true;}
+  else if(exec.Type()==OP_SELL){m_last_sell_exec=exec.Price();m_have_last_sell_exec=true;}
+ }
 
 public:
- ExecutionEngine(){m_enabled=false;m_magic=1001;m_slippage=20;m_execution_mode=ZGOLD_EXEC_TEST;m_buy_level=0;m_sell_level=0;ResetStatus();}
+ ExecutionEngine(){m_enabled=false;m_magic=1001;m_slippage=20;m_execution_mode=ZGOLD_EXEC_TEST;m_buy_level=0;m_sell_level=0;ResetExecutionAnchors();ResetStatus();}
  void Configure(int magic,bool enabled,int execution_mode,int slippage){m_magic=magic;m_enabled=enabled;m_execution_mode=execution_mode;m_slippage=MathMax(0,slippage);}
  void ResetStatus(){m_last_action="NONE";m_last_error="";}
  bool Enabled()const{return m_enabled&&m_execution_mode!=ZGOLD_EXEC_DISABLED;}
@@ -83,19 +91,32 @@ public:
  {
   if(!Enabled()||exec.Status()!=ZGOLD_EXEC_EXECUTED)return false;
   ResetStatus();
-  if(PendingCount()>0)return false;
+  RecordExecution(exec);
+  bool changed=false;
 
-  int pending_type=-1; double requested=0.0;
-  if(exec.Type()==OP_BUY || exec.Type()==OP_BUYSTOP){pending_type=OP_SELLSTOP;requested=exec.Price()-ZGoldParams::MinDistance();}
-  else if(exec.Type()==OP_SELL || exec.Type()==OP_SELLSTOP){pending_type=OP_BUYSTOP;requested=exec.Price()+ZGoldParams::MinDistance();}
+  // Zeus does not require the whole pending inventory to be empty before
+  // creating the next opposite layer. It only needs that directional pending
+  // slot to be absent. This permits one BUY and one SELL pending structure to
+  // coexist and is also compatible with the observed multi-layer expansion.
+  int opposite_type=-1; double opposite_price=0.0;
+  if(exec.Type()==OP_BUY){opposite_type=OP_SELLSTOP;opposite_price=exec.Price()-ZGoldParams::MinDistance();}
+  else if(exec.Type()==OP_SELL){opposite_type=OP_BUYSTOP;opposite_price=exec.Price()+ZGoldParams::MinDistance();}
   else {m_last_error="UNSUPPORTED_EXECUTION_TYPE";return false;}
 
-  double next_lot=LotForType(pending_type);
-  double price=NormalizePending(pending_type,requested);
-  string comment=(pending_type==OP_BUYSTOP?"ZGOLD_EXP_BUY":"ZGOLD_EXP_SELL");
-  bool ok=SendPending(pending_type,next_lot,price,comment);
-  if(ok)AdvanceLotState(pending_type);
-  return ok;
+  if(!HasPendingType(opposite_type))
+  {
+    double lots=LotForType(opposite_type);
+    double price=NormalizePending(opposite_type,opposite_price);
+    string comment=(opposite_type==OP_BUYSTOP?"ZGOLD_EXP_BUY":"ZGOLD_EXP_SELL");
+    if(SendPending(opposite_type,lots,price,comment)){AdvanceLotState(opposite_type);changed=true;}
+  }
+
+  // Strong behavioral reconstruction: same-direction layers appear after an
+  // adverse move of approximately Step from the last execution of that side.
+  // This is deliberately isolated from MinDistance/TwoStep; the exact Zeus
+  // selector remains unresolved and is not treated as proven geometry.
+  if(MaybeCreateSameDirectionLayer(bid,ask))changed=true;
+  return changed;
  }
 
  bool ExecuteBasket(int direction)
@@ -107,13 +128,10 @@ public:
    if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;
    if(OrderType()==direction)if(CloseTicket(OrderTicket()))changed=true;
   }
-  // Proven directional reset: after a basket close the next order in that
-  // direction returns to base lot. The exact post-close geometry is kept
-  // conservative and uses the proven MinDistance family.
   if(changed)
   {
-   if(direction==OP_BUY)m_buy_level=0;
-   if(direction==OP_SELL)m_sell_level=0;
+   if(direction==OP_BUY){m_buy_level=0;m_have_last_buy_exec=false;}
+   if(direction==OP_SELL){m_sell_level=0;m_have_last_sell_exec=false;}
    int pending_type=(direction==OP_BUY?OP_BUYSTOP:OP_SELLSTOP);
    if(!HasPendingType(pending_type))
    {
@@ -129,11 +147,27 @@ public:
  {
   if(!Enabled())return false; bool changed=false;
   for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;int t=OrderType();if(t==OP_BUYSTOP||t==OP_SELLSTOP||t==OP_BUYLIMIT||t==OP_SELLLIMIT)if(OrderDelete(OrderTicket()))changed=true;}
-  if(CurrentPositionCount()==0&&PendingCount()==0){ResetLotState();if(EnsureInitialStructure(bid,ask))changed=true;}
+  if(CurrentPositionCount()==0&&PendingCount()==0){ResetLotState();ResetExecutionAnchors();if(EnsureInitialStructure(bid,ask))changed=true;}
   return changed;
  }
 
 private:
+ bool MaybeCreateSameDirectionLayer(double bid,double ask)
+ {
+  int type=-1; double requested=0; bool eligible=false;
+  if(m_have_last_buy_exec && ask<=m_last_buy_exec-ZGoldParams::Step())
+  {type=OP_BUYSTOP;requested=m_last_buy_exec-ZGoldParams::Step();eligible=true;}
+  if(m_have_last_sell_exec && bid>=m_last_sell_exec+ZGoldParams::Step())
+  {type=OP_SELLSTOP;requested=m_last_sell_exec+ZGoldParams::Step();eligible=true;}
+  if(!eligible)return false;
+  if(HasPendingType(type))return false;
+  double price=NormalizePending(type,requested);
+  double lots=LotForType(type);
+  string comment=(type==OP_BUYSTOP?"ZGOLD_LAYER_BUY":"ZGOLD_LAYER_SELL");
+  bool ok=SendPending(type,lots,price,comment);
+  if(ok)AdvanceLotState(type);
+  return ok;
+ }
  int CurrentPositionCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_BUY||OrderType()==OP_SELL)n++;}return n;}
  int PendingCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;int t=OrderType();if(t==OP_BUYSTOP||t==OP_SELLSTOP||t==OP_BUYLIMIT||t==OP_SELLLIMIT)n++;}return n;}
  int BuyPositionCount(){int n=0;for(int i=OrdersTotal()-1;i>=0;i--){if(!OrderSelect(i,SELECT_BY_POS,MODE_TRADES))continue;if(OrderSymbol()!=Symbol()||OrderMagicNumber()!=m_magic)continue;if(OrderType()==OP_BUY)n++;}return n;}
